@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { Field, Input, Select, MultiSelect, AsyncSelect, Text } from '@grafana/ui';
-import { resolveDatasourceQueryOptions, getDataSources } from '../api/grafana';
-import type { TemplateVariable, GrafanaDataSource } from '../types';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Field, Input, MultiSelect, Select } from '@grafana/ui';
+import { getDataSources, resolveDatasourceQueryOptions } from '../api/grafana';
+import type { GrafanaDataSource, TemplateVariable } from '../types';
 
 interface Props {
   variable: TemplateVariable;
@@ -9,16 +9,11 @@ interface Props {
   onChange: (value: string | string[]) => void;
 }
 
-/**
- * Renders the appropriate Grafana UI input for a given template variable type.
- */
 export function VariableField({ variable, value, onChange }: Props) {
-  const description = variable.description;
-
   return (
     <Field
       label={variable.label || variable.name}
-      description={description}
+      description={variable.description}
       required={variable.required}
     >
       <VariableInput variable={variable} value={value} onChange={onChange} />
@@ -34,110 +29,103 @@ function VariableInput({ variable, value, onChange }: Props) {
         <Input
           value={typeof value === 'string' ? value : value[0] ?? ''}
           placeholder={variable.default ?? ''}
-          onChange={(e) => onChange(e.currentTarget.value)}
-          required={variable.required}
+          onChange={(event) => onChange(event.currentTarget.value)}
         />
       );
 
     case 'custom':
-      return (
-        <CustomVariableField variable={variable} value={value} onChange={onChange} />
-      );
+      return <CustomVariableField variable={variable} value={value} onChange={onChange} />;
 
     case 'query':
-      return (
-        <QueryVariableField variable={variable} value={value} onChange={onChange} />
-      );
+      return <QueryVariableField variable={variable} value={value} onChange={onChange} />;
 
     case 'datasource':
-      return (
-        <DatasourceVariableField variable={variable} value={value} onChange={onChange} />
-      );
+      return <DatasourceVariableField variable={variable} value={value} onChange={onChange} />;
 
     default:
       return (
         <Input
           value={typeof value === 'string' ? value : value[0] ?? ''}
-          placeholder={variable.default ?? ''}
-          onChange={(e) => onChange(e.currentTarget.value)}
+          onChange={(event) => onChange(event.currentTarget.value)}
         />
       );
   }
 }
 
-// ─── Custom (static options) ─────────────────────────────────────────────────
-
 function CustomVariableField({ variable, value, onChange }: Props) {
-  const options = (variable.options || []).map((opt) => ({ label: opt, value: opt }));
+  const options = (variable.options ?? []).map((option) => ({ label: option, value: option }));
 
   if (variable.multi) {
+    const selectedValues = Array.isArray(value) ? value : value ? [value] : [];
+
     return (
       <MultiSelect
         options={options}
-        value={Array.isArray(value) ? value : value ? [value] : []}
-        onChange={(vals) => onChange(vals.map((v) => String(v.value)))}
-        placeholder={`Select ${variable.label || variable.name}`}
+        value={selectedValues.map((selected) => ({ label: selected, value: selected }))}
+        onChange={(items) => onChange(items.map((item) => String(item.value)))}
         closeMenuOnSelect={false}
+        placeholder={`Select ${variable.label || variable.name}`}
       />
     );
   }
 
+  const selectedValue = typeof value === 'string' ? value : value[0];
+
   return (
     <Select
       options={options}
-      value={typeof value === 'string' ? value : value[0]}
-      onChange={(val) => onChange(val.value as string)}
+      value={selectedValue ? { label: selectedValue, value: selectedValue } : undefined}
+      onChange={(item) => onChange(String(item.value ?? ''))}
       placeholder={variable.default || `Select ${variable.label || variable.name}`}
     />
   );
 }
 
-// ─── Query (async datasource query) ──────────────────────────────────────────
-
 function QueryVariableField({ variable, value, onChange }: Props) {
-  const loadOptions = async (inputValue: string) => {
-    if (!variable.datasource || !variable.query) {
-      return [];
-    }
-    const values = await resolveDatasourceQueryOptions(variable.datasource, variable.query);
-    const filtered = inputValue
-      ? values.filter((v) => v.toLowerCase().includes(inputValue.toLowerCase()))
-      : values;
+  const [options, setOptions] = useState<Array<{ label: string; value: string }>>([]);
 
-    if (variable.includeAll) {
-      return [{ label: 'All', value: '$__all' }, ...filtered.map((v) => ({ label: v, value: v }))];
+  useEffect(() => {
+    const datasourceRef = variable.datasource || variable.datasourceType || '';
+    if (!datasourceRef || !variable.query) {
+      setOptions([]);
+      return;
     }
-    return filtered.map((v) => ({ label: v, value: v }));
-  };
 
-  const defaultOptions = true; // load on mount
+    resolveDatasourceQueryOptions(datasourceRef, variable.query)
+      .then((items) => {
+        const mappedOptions = items.map((item) => ({ label: item, value: item }));
+        setOptions(
+          variable.includeAll
+            ? [{ label: 'All', value: '$__all' }, ...mappedOptions]
+            : mappedOptions
+        );
+      })
+      .catch(() => setOptions([]));
+  }, [variable.datasource, variable.datasourceType, variable.includeAll, variable.query]);
 
   if (variable.multi) {
+    const selectedValues = Array.isArray(value) ? value : value ? [value] : [];
+
     return (
-      <AsyncSelect
-        loadOptions={loadOptions}
-        defaultOptions={defaultOptions}
-        value={Array.isArray(value) ? value.map((v) => ({ label: v, value: v })) : []}
-        onChange={(vals) => {
-          if (Array.isArray(vals)) {
-            onChange(vals.map((v) => String(v.value)));
-          }
-        }}
-        isMulti
-        placeholder={`Select ${variable.label || variable.name}`}
+      <MultiSelect
+        options={options}
+        value={selectedValues.map((selected) => ({ label: selected, value: selected }))}
+        onChange={(items) => onChange(items.map((item) => String(item.value)))}
         closeMenuOnSelect={false}
+        placeholder={`Select ${variable.label || variable.name}`}
       />
     );
   }
 
+  const selectedValue = typeof value === 'string' ? value : value[0];
+
   return (
-    <AsyncSelect
-      loadOptions={loadOptions}
-      defaultOptions={defaultOptions}
-      value={typeof value === 'string' ? { label: value, value } : undefined}
-      onChange={(val) => {
-        if (val && !Array.isArray(val)) {
-          onChange(String(val.value));
+    <Select
+      options={options}
+      value={selectedValue ? { label: selectedValue, value: selectedValue } : undefined}
+      onChange={(item) => {
+        if (item && !Array.isArray(item)) {
+          onChange(String(item.value ?? ''));
         }
       }}
       placeholder={variable.default || `Select ${variable.label || variable.name}`}
@@ -145,27 +133,30 @@ function QueryVariableField({ variable, value, onChange }: Props) {
   );
 }
 
-// ─── Datasource ───────────────────────────────────────────────────────────────
-
 function DatasourceVariableField({ variable, value, onChange }: Props) {
   const [datasources, setDatasources] = useState<GrafanaDataSource[]>([]);
 
   useEffect(() => {
-    getDataSources().then(setDatasources).catch(console.error);
+    getDataSources().then(setDatasources).catch(() => setDatasources([]));
   }, []);
 
-  const filtered = datasources.filter(
-    (ds) => !variable.datasourceType || ds.type === variable.datasourceType
-  );
-  const options = filtered.map((ds) => ({ label: `${ds.name} (${ds.type})`, value: ds.uid }));
+  const options = useMemo(() => {
+    return datasources
+      .filter((datasource) => !variable.datasourceType || datasource.type === variable.datasourceType)
+      .map((datasource) => ({
+        label: `${datasource.name} (${datasource.type})`,
+        value: datasource.uid,
+      }));
+  }, [datasources, variable.datasourceType]);
 
-  const currentValue = typeof value === 'string' ? value : value[0] ?? '';
+  const selectedValue = typeof value === 'string' ? value : value[0] ?? '';
+  const selectedOption = options.find((option) => option.value === selectedValue);
 
   return (
     <Select
       options={options}
-      value={currentValue}
-      onChange={(val) => onChange(String(val.value))}
+      value={selectedOption}
+      onChange={(item) => onChange(String(item.value ?? ''))}
       placeholder={`Select ${variable.label || variable.name}`}
     />
   );

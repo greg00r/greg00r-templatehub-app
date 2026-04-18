@@ -54,6 +54,7 @@ LABEL org.opencontainers.image.version="1.0.0"
 
 COPY --from=frontend-builder /plugin/dist/ /plugin/gregoor-private-marketplace-app/
 COPY --from=backend-builder  /plugin/dist/ /plugin/gregoor-private-marketplace-app/
+COPY templates/ /seed-templates/
 
 RUN chmod +x /plugin/gregoor-private-marketplace-app/gpx_private_marketplace_linux_amd64 \
  && chmod +x /plugin/gregoor-private-marketplace-app/gpx_private_marketplace_linux_arm64

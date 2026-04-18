@@ -1,14 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Button,
   Field,
   Input,
-  RadioButtonGroup,
-  SecretInput,
   Select,
   Stack,
-  Switch,
   Text,
   useStyles2,
 } from '@grafana/ui';
@@ -23,6 +20,10 @@ interface Props {
   plugin: {
     meta: {
       jsonData?: AppPluginSettings;
+      secureJsonFields?: {
+        externalAuthToken?: boolean;
+        externalAuthPassword?: boolean;
+      };
     };
   };
 }
@@ -36,7 +37,8 @@ const AUTH_OPTIONS = [
 export function ConfigPage({ plugin }: Props) {
   const styles = useStyles2(getStyles);
   const appEvents = getAppEvents();
-  const jsonData = plugin.meta.jsonData ?? {};
+  const jsonData = (plugin.meta.jsonData ?? {}) as AppPluginSettings;
+  const secureJsonFields = plugin.meta.secureJsonFields ?? {};
 
   const [storageBackend, setStorageBackend] = useState<StorageBackend>(
     jsonData.storageBackend ?? 'local'
@@ -48,12 +50,31 @@ export function ConfigPage({ plugin }: Props) {
   const [authType, setAuthType] = useState<ExternalAuthType>(jsonData.externalAuthType ?? 'none');
   const [authUsername, setAuthUsername] = useState(jsonData.externalAuthUsername ?? '');
   const [authSecret, setAuthSecret] = useState('');
-  const [secretSet, setSecretSet] = useState(false);
+  const [secretConfigured, setSecretConfigured] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [initializing, setInitializing] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const selectedAuthOption = useMemo(
+    () => AUTH_OPTIONS.find((option) => option.value === authType),
+    [authType]
+  );
+
+  useEffect(() => {
+    if (authType === 'bearer') {
+      setSecretConfigured(Boolean(secureJsonFields.externalAuthToken));
+      return;
+    }
+
+    if (authType === 'basic') {
+      setSecretConfigured(Boolean(secureJsonFields.externalAuthPassword));
+      return;
+    }
+
+    setSecretConfigured(false);
+  }, [authType, secureJsonFields.externalAuthPassword, secureJsonFields.externalAuthToken]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -72,14 +93,16 @@ export function ConfigPage({ plugin }: Props) {
         },
       };
 
-      if (secretSet && authSecret) {
+      if ((authType === 'bearer' || authType === 'basic') && authSecret.trim()) {
         payload.secureJsonData =
           authType === 'bearer'
-            ? { externalAuthToken: authSecret }
-            : { externalAuthPassword: authSecret };
+            ? { externalAuthToken: authSecret.trim() }
+            : { externalAuthPassword: authSecret.trim() };
       }
 
       await getBackendSrv().post(`/api/plugins/${PLUGIN_ID}/settings`, payload);
+      setAuthSecret('');
+      setSecretConfigured(authType === 'bearer' || authType === 'basic');
 
       appEvents.publish({
         type: AppEvents.alertSuccess.name,
@@ -142,14 +165,20 @@ export function ConfigPage({ plugin }: Props) {
         label="Storage backend"
         description="Choose where templates are stored."
       >
-        <RadioButtonGroup
-          options={[
-            { label: 'Local (PVC)', value: 'local' },
-            { label: 'External HTTP', value: 'external' },
-          ]}
-          value={storageBackend}
-          onChange={(val) => setStorageBackend(val as StorageBackend)}
-        />
+        <div className={styles.toggleRow}>
+          <Button
+            variant={storageBackend === 'local' ? 'primary' : 'secondary'}
+            onClick={() => setStorageBackend('local')}
+          >
+            Local (PVC)
+          </Button>
+          <Button
+            variant={storageBackend === 'external' ? 'primary' : 'secondary'}
+            onClick={() => setStorageBackend('external')}
+          >
+            External HTTP
+          </Button>
+        </div>
       </Field>
 
       {/* Local storage settings */}
@@ -191,7 +220,7 @@ export function ConfigPage({ plugin }: Props) {
           <Field label="Authentication">
             <Select
               options={AUTH_OPTIONS}
-              value={authType}
+              value={selectedAuthOption}
               onChange={(val) => setAuthType(val.value as ExternalAuthType)}
             />
           </Field>
@@ -211,13 +240,32 @@ export function ConfigPage({ plugin }: Props) {
               label={authType === 'bearer' ? 'Bearer token' : 'Password'}
               description="Stored securely and never exposed to the browser."
             >
-              <SecretInput
-                value={authSecret}
-                isConfigured={secretSet}
-                onChange={(e) => setAuthSecret(e.currentTarget.value)}
-                onReset={() => { setAuthSecret(''); setSecretSet(false); }}
-                placeholder={authType === 'bearer' ? 'Bearer token' : 'Password'}
-              />
+              <div className={styles.secretRow}>
+                <Input
+                  type="password"
+                  value={authSecret}
+                  placeholder={
+                    secretConfigured && !authSecret
+                      ? 'Secret already configured'
+                      : authType === 'bearer'
+                        ? 'Bearer token'
+                        : 'Password'
+                  }
+                  onChange={(e) => {
+                    setAuthSecret(e.currentTarget.value);
+                    setSecretConfigured(false);
+                  }}
+                />
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setAuthSecret('');
+                    setSecretConfigured(false);
+                  }}
+                >
+                  Clear
+                </Button>
+              </div>
             </Field>
           )}
 
@@ -242,7 +290,7 @@ export function ConfigPage({ plugin }: Props) {
         </div>
       )}
 
-      <Stack style={{ marginTop: '24px' }}>
+      <div style={{ marginTop: '24px' }}>
         <Button
           variant="primary"
           onClick={handleSave}
@@ -251,7 +299,7 @@ export function ConfigPage({ plugin }: Props) {
         >
           {saving ? 'Saving…' : 'Save settings'}
         </Button>
-      </Stack>
+      </div>
     </div>
   );
 }
@@ -270,6 +318,16 @@ function getStyles(theme: GrafanaTheme2) {
       borderRadius: theme.shape.radius.default,
       border: `1px solid ${theme.colors.border.weak}`,
       marginBottom: theme.spacing(2),
+    }),
+    toggleRow: css({
+      display: 'flex',
+      gap: theme.spacing(1),
+      flexWrap: 'wrap',
+    }),
+    secretRow: css({
+      display: 'flex',
+      gap: theme.spacing(1),
+      alignItems: 'center',
     }),
   };
 }

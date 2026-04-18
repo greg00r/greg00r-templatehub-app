@@ -1,7 +1,7 @@
 import React from 'react';
-import { Card, Stack, Tag, Text, useStyles2 } from '@grafana/ui';
-import { GrafanaTheme2 } from '@grafana/data';
 import { css } from '@emotion/css';
+import { GrafanaTheme2 } from '@grafana/data';
+import { useStyles2 } from '@grafana/ui';
 import { getTemplateImageUrl } from '../api/templates';
 import type { Template } from '../types';
 
@@ -11,66 +11,67 @@ interface Props {
 }
 
 export function TemplateCard({ template, onClick }: Props) {
-  const { metadata } = template;
   const styles = useStyles2(getStyles);
+  const { metadata } = template;
 
   return (
-    <Card onClick={onClick} className={styles.card}>
-      {/* Thumbnail */}
-      <Card.Figure className={styles.figure}>
+    <div
+      className={styles.card}
+      onClick={onClick}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onClick();
+        }
+      }}
+      role="button"
+      tabIndex={0}
+      aria-label={`Open template ${metadata.title}`}
+    >
+      <div className={styles.figure}>
         <img
           src={getTemplateImageUrl(metadata.id)}
           alt={`${metadata.title} preview`}
           className={styles.image}
-          onError={(e) => {
-            const el = e.target as HTMLImageElement;
-            el.style.display = 'none';
-            const placeholder = el.nextElementSibling as HTMLElement;
+          onError={(event) => {
+            const element = event.target as HTMLImageElement;
+            element.style.display = 'none';
+            const placeholder = element.nextElementSibling as HTMLElement | null;
             if (placeholder) {
               placeholder.style.display = 'flex';
             }
           }}
         />
-        {/* Fallback placeholder shown when image fails */}
         <div className={styles.imagePlaceholder} style={{ display: 'none' }}>
-          <span style={{ fontSize: '40px', opacity: 0.3 }}>📊</span>
+          <span style={{ fontSize: '40px', opacity: 0.3 }}>Preview</span>
         </div>
-      </Card.Figure>
+      </div>
 
-      <Card.Heading>{metadata.title}</Card.Heading>
+      <div className={styles.content}>
+        <div className={styles.title}>{metadata.title}</div>
+        <div className={styles.description}>{metadata.shortDescription}</div>
 
-      <Card.Description>
-        <Text variant="bodySmall" color="secondary">
-          {metadata.shortDescription}
-        </Text>
-      </Card.Description>
-
-      <Card.Meta>
-        <Stack gap={0.5} wrap="wrap" alignItems="center">
-          {(metadata.tags || []).slice(0, 4).map((tag) => (
-            <Tag key={tag} name={tag} />
+        <div className={styles.tags}>
+          {(metadata.tags ?? []).slice(0, 4).map((tag) => (
+            <span key={tag} className={styles.tag}>
+              {tag}
+            </span>
           ))}
-          {(metadata.tags || []).length > 4 && (
-            <Text variant="bodySmall" color="secondary">
-              +{metadata.tags.length - 4} more
-            </Text>
+          {(metadata.tags ?? []).length > 4 && (
+            <span className={styles.moreTag}>+{metadata.tags.length - 4} more</span>
           )}
-        </Stack>
-      </Card.Meta>
+        </div>
 
-      <Card.Actions>
-        <Stack justifyContent="space-between" alignItems="center" style={{ width: '100%' }}>
-          <Text variant="bodySmall" color="secondary">
-            v{metadata.version} · {metadata.author}
-          </Text>
-          {metadata.requiredDatasources?.length > 0 && (
-            <Text variant="bodySmall" color="secondary">
-              {metadata.requiredDatasources.map((ds) => ds.type).join(', ')}
-            </Text>
-          )}
-        </Stack>
-      </Card.Actions>
-    </Card>
+        <div className={styles.footer}>
+          <span className={styles.meta}>v{metadata.version} by {metadata.author}</span>
+          {metadata.requiredDatasources?.length ? (
+            <span className={styles.meta}>
+              {metadata.requiredDatasources.map((datasource) => datasource.type).join(', ')}
+            </span>
+          ) : null}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -79,16 +80,28 @@ function getStyles(theme: GrafanaTheme2) {
     card: css({
       cursor: 'pointer',
       transition: 'box-shadow 0.15s ease',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(2),
+      padding: theme.spacing(2),
+      borderRadius: theme.shape.radius.default,
+      border: `1px solid ${theme.colors.border.weak}`,
+      background: theme.colors.background.primary,
       '&:hover': {
         boxShadow: theme.shadows.z3,
+      },
+      '&:focus-visible': {
+        outline: `2px solid ${theme.colors.primary.main}`,
+        outlineOffset: '2px',
       },
     }),
     figure: css({
       position: 'relative',
       width: '100%',
-      aspectRatio: '16/9',
+      aspectRatio: '16 / 9',
       overflow: 'hidden',
       background: theme.colors.background.secondary,
+      borderRadius: theme.shape.radius.default,
     }),
     image: css({
       width: '100%',
@@ -98,10 +111,54 @@ function getStyles(theme: GrafanaTheme2) {
     imagePlaceholder: css({
       position: 'absolute',
       inset: 0,
-      display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       background: theme.colors.background.secondary,
+    }),
+    content: css({
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(1.5),
+    }),
+    title: css({
+      fontSize: theme.typography.h5.fontSize,
+      fontWeight: theme.typography.fontWeightMedium,
+      color: theme.colors.text.primary,
+    }),
+    description: css({
+      fontSize: theme.typography.bodySmall.fontSize,
+      color: theme.colors.text.secondary,
+      lineHeight: 1.5,
+    }),
+    tags: css({
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: theme.spacing(1),
+    }),
+    tag: css({
+      display: 'inline-flex',
+      alignItems: 'center',
+      minHeight: '24px',
+      padding: `0 ${theme.spacing(1)}`,
+      borderRadius: '999px',
+      background: theme.colors.background.secondary,
+      color: theme.colors.text.secondary,
+      fontSize: theme.typography.bodySmall.fontSize,
+      border: `1px solid ${theme.colors.border.weak}`,
+    }),
+    moreTag: css({
+      color: theme.colors.text.secondary,
+      fontSize: theme.typography.bodySmall.fontSize,
+    }),
+    footer: css({
+      display: 'flex',
+      justifyContent: 'space-between',
+      gap: theme.spacing(1),
+      flexWrap: 'wrap',
+    }),
+    meta: css({
+      color: theme.colors.text.secondary,
+      fontSize: theme.typography.bodySmall.fontSize,
     }),
   };
 }

@@ -1,29 +1,20 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import {
-  Alert,
-  Button,
-  Field,
-  Input,
-  LoadingBar,
-  Modal,
-  Select,
-  Stack,
-  Text,
-} from '@grafana/ui';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Alert, Button, Field, Input, LoadingBar, Select, Stack, Text } from '@grafana/ui';
 import { AppEvents } from '@grafana/data';
 import { getAppEvents } from '@grafana/runtime';
-import { getTemplateJson, getTemplateVariables } from '../api/templates';
 import { getFolders, importDashboard } from '../api/grafana';
-import { VariableField } from './VariableField';
+import { getTemplateJson } from '../api/templates';
 import { DatasourceMapper } from './DatasourceMapper';
+import { SimpleModal } from './SimpleModal';
+import { VariableField } from './VariableField';
 import type {
+  DatasourceMapping,
+  GrafanaDashboard,
+  GrafanaFolder,
   TemplateMetadata,
   TemplateVariable,
-  GrafanaFolder,
-  GrafanaDashboard,
-  DatasourceMapping,
 } from '../types';
+import { navigateToPath } from '../utils/navigation';
 
 interface Props {
   templateId: string;
@@ -35,21 +26,15 @@ interface Props {
 type Step = 'variables' | 'datasources' | 'importing';
 
 export function ImportModal({ templateId, metadata, variables, onDismiss }: Props) {
-  const navigate = useNavigate();
   const appEvents = getAppEvents();
 
-  // Form state
   const [dashboardName, setDashboardName] = useState(metadata.title);
   const [folderUid, setFolderUid] = useState('');
-  const [varValues, setVarValues] = useState<Record<string, string | string[]>>(() => {
-    // Pre-fill defaults
-    return Object.fromEntries(
-      variables.map((v) => [v.name, v.default ?? (v.multi ? [] : '')])
-    );
-  });
+  const [variableValues, setVariableValues] = useState<Record<string, string | string[]>>(() =>
+    Object.fromEntries(variables.map((variable) => [variable.name, variable.default ?? (variable.multi ? [] : '')]))
+  );
   const [datasourceMappings, setDatasourceMappings] = useState<DatasourceMapping[]>([]);
 
-  // Loaded data
   const [folders, setFolders] = useState<GrafanaFolder[]>([]);
   const [dashboard, setDashboard] = useState<GrafanaDashboard | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,88 +42,90 @@ export function ImportModal({ templateId, metadata, variables, onDismiss }: Prop
   const [step, setStep] = useState<Step>('variables');
   const [importing, setImporting] = useState(false);
 
-  const folderOptions = [
-    { label: 'General', value: '' },
-    ...folders.map((f) => ({ label: f.title, value: f.uid })),
-  ];
+  const folderOptions = useMemo(
+    () => [{ label: 'General', value: '' }, ...folders.map((folder) => ({ label: folder.title, value: folder.uid }))],
+    [folders]
+  );
 
-  // Load dashboard JSON and folders in parallel
-  const loadData = useCallback(async () => {
+  const loadModalData = useCallback(async () => {
     setLoading(true);
     setError(null);
+
     try {
-      const [dashJson, folderList] = await Promise.all([
+      const [templateDashboard, availableFolders] = await Promise.all([
         getTemplateJson(templateId),
         getFolders(),
       ]);
-      setDashboard(dashJson);
-      setFolders(folderList);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load template data');
+
+      setDashboard(templateDashboard);
+      setFolders(availableFolders);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Failed to load template data');
     } finally {
       setLoading(false);
     }
   }, [templateId]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    loadModalData();
+  }, [loadModalData]);
+
+  const hasAllRequiredValues = variables
+    .filter((variable) => variable.required)
+    .every((variable) => {
+      const currentValue = variableValues[variable.name];
+      return Array.isArray(currentValue) ? currentValue.length > 0 : Boolean(currentValue);
+    });
 
   const handleImport = async () => {
-    if (!dashboard) { return; }
+    if (!dashboard) {
+      return;
+    }
+
     setImporting(true);
     setStep('importing');
+    setError(null);
+
     try {
       const result = await importDashboard(
         dashboard,
         {
           dashboardName,
           folderUid,
-          variables: varValues,
+          variables: variableValues,
           datasourceMappings,
         },
         variables
       );
+
       appEvents.publish({
         type: AppEvents.alertSuccess.name,
-        payload: [`Dashboard "${dashboardName}" imported successfully!`],
+        payload: [`Dashboard "${dashboardName}" imported successfully.`],
       });
+
       onDismiss();
-      // Navigate to the imported dashboard
-      navigate(result.url);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Import failed';
-      setError(msg);
-      setStep('variables');
+      navigateToPath(result.url);
+    } catch (importError) {
+      const message = importError instanceof Error ? importError.message : 'Import failed';
+      setError(message);
+      setStep('datasources');
+
       appEvents.publish({
         type: AppEvents.alertError.name,
-        payload: ['Import failed', msg],
+        payload: ['Import failed', message],
       });
     } finally {
       setImporting(false);
     }
   };
 
-  // Validate required variables before advancing
-  const hasRequiredValues = variables
-    .filter((v) => v.required)
-    .every((v) => {
-      const val = varValues[v.name];
-      return Array.isArray(val) ? val.length > 0 : Boolean(val);
-    });
-
   return (
-    <Modal
-      title={`Import: ${metadata.title}`}
-      isOpen
-      onDismiss={onDismiss}
-      style={{ width: '640px' }}
-    >
+    <SimpleModal title={`Import: ${metadata.title}`} onDismiss={onDismiss}>
       {loading && (
-        <div style={{ padding: '16px' }}>
-          <LoadingBar width={300} />
-          <Text color="secondary">Loading template data…</Text>
-        </div>
+        <Stack direction="column" gap={1}>
+          <LoadingBar width={320} />
+          <Text color="secondary">Loading template data...</Text>
+        </Stack>
       )}
 
       {!loading && error && (
@@ -147,98 +134,78 @@ export function ImportModal({ templateId, metadata, variables, onDismiss }: Prop
         </Alert>
       )}
 
-      {!loading && !error && (
-        <>
-          {/* Step: Variables + basic settings */}
-          {step === 'variables' && (
-            <Stack direction="column" gap={2}>
-              {/* Dashboard name */}
-              <Field label="Dashboard name" required>
-                <Input
-                  value={dashboardName}
-                  onChange={(e) => setDashboardName(e.currentTarget.value)}
-                  placeholder="Dashboard name"
+      {!loading && !error && step === 'variables' && (
+        <Stack direction="column" gap={2}>
+          <Field label="Dashboard name" required>
+            <Input value={dashboardName} onChange={(event) => setDashboardName(event.currentTarget.value)} />
+          </Field>
+
+          <Field label="Folder">
+            <Select
+              options={folderOptions}
+              value={folderOptions.find((option) => option.value === folderUid)}
+              onChange={(item) => setFolderUid(String(item.value ?? ''))}
+            />
+          </Field>
+
+          {variables.length > 0 && (
+            <>
+              <Text variant="h5">Template Variables</Text>
+              {variables.map((variable) => (
+                <VariableField
+                  key={variable.name}
+                  variable={variable}
+                  value={variableValues[variable.name] ?? variable.default ?? ''}
+                  onChange={(nextValue) =>
+                    setVariableValues((current) => ({ ...current, [variable.name]: nextValue }))
+                  }
                 />
-              </Field>
-
-              {/* Folder */}
-              <Field label="Folder">
-                <Select
-                  options={folderOptions}
-                  value={folderUid}
-                  onChange={(val) => setFolderUid(String(val.value ?? ''))}
-                  placeholder="General"
-                />
-              </Field>
-
-              {/* Template variables */}
-              {variables.length > 0 && (
-                <>
-                  <Text variant="h5">Template Variables</Text>
-                  {variables.map((v) => (
-                    <VariableField
-                      key={v.name}
-                      variable={v}
-                      value={varValues[v.name] ?? (v.default ?? '')}
-                      onChange={(val) =>
-                        setVarValues((prev) => ({ ...prev, [v.name]: val }))
-                      }
-                    />
-                  ))}
-                </>
-              )}
-
-              <Stack justifyContent="flex-end" gap={2} style={{ marginTop: '8px' }}>
-                <Button variant="secondary" onClick={onDismiss}>
-                  Cancel
-                </Button>
-                {dashboard && (
-                  <Button
-                    variant="primary"
-                    onClick={() => setStep('datasources')}
-                    disabled={!hasRequiredValues || !dashboardName}
-                  >
-                    Next: Datasources →
-                  </Button>
-                )}
-              </Stack>
-            </Stack>
+              ))}
+            </>
           )}
 
-          {/* Step: Datasource mapping */}
-          {step === 'datasources' && dashboard && (
-            <Stack direction="column" gap={2}>
-              <DatasourceMapper
-                dashboard={dashboard}
-                mappings={datasourceMappings}
-                onChange={setDatasourceMappings}
-              />
-
-              <Stack justifyContent="flex-end" gap={2} style={{ marginTop: '8px' }}>
-                <Button variant="secondary" onClick={() => setStep('variables')}>
-                  ← Back
-                </Button>
-                <Button
-                  variant="primary"
-                  icon="import"
-                  onClick={handleImport}
-                  disabled={importing}
-                >
-                  {importing ? 'Importing…' : 'Import dashboard'}
-                </Button>
-              </Stack>
-            </Stack>
-          )}
-
-          {/* Step: Importing (spinner) */}
-          {step === 'importing' && (
-            <Stack direction="column" gap={2} alignItems="center" style={{ padding: '32px' }}>
-              <LoadingBar width={300} />
-              <Text color="secondary">Importing dashboard…</Text>
-            </Stack>
-          )}
-        </>
+          <Stack justifyContent="flex-end" gap={2}>
+            <Button variant="secondary" onClick={onDismiss}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => setStep('datasources')}
+              disabled={!dashboardName || !hasAllRequiredValues}
+            >
+              Next: Datasources
+            </Button>
+          </Stack>
+        </Stack>
       )}
-    </Modal>
+
+      {!loading && !error && step === 'datasources' && dashboard && (
+        <Stack direction="column" gap={2}>
+          <DatasourceMapper
+            dashboard={dashboard}
+            mappings={datasourceMappings}
+            onChange={setDatasourceMappings}
+          />
+
+          <Stack justifyContent="flex-end" gap={2}>
+            <Button variant="secondary" onClick={() => setStep('variables')}>
+              Back
+            </Button>
+            <Button variant="primary" icon="import" onClick={handleImport} disabled={importing}>
+              {importing ? 'Importing...' : 'Import dashboard'}
+            </Button>
+          </Stack>
+        </Stack>
+      )}
+
+      {step === 'importing' && (
+        <div style={{ padding: '24px 0' }}>
+          <Stack direction="column" gap={1} alignItems="center">
+          <LoadingBar width={320} />
+          <Text color="secondary">Importing dashboard...</Text>
+          </Stack>
+        </div>
+      )}
+    </SimpleModal>
   );
 }

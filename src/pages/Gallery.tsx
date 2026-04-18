@@ -1,49 +1,36 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import {
-  Button,
-  EmptyState,
-  FilterInput,
-  Icon,
-  LoadingBar,
-  MultiSelect,
-  Stack,
-  Tag,
-  Text,
-  TextLink,
-  Alert,
-} from '@grafana/ui';
-import { AppEvents } from '@grafana/data';
+import { css } from '@emotion/css';
+import { AppEvents, GrafanaTheme2 } from '@grafana/data';
 import { getAppEvents } from '@grafana/runtime';
+import { useStyles2 } from '@grafana/ui';
 import { listTemplates } from '../api/templates';
 import { TemplateCard } from '../components/TemplateCard';
 import type { Template } from '../types';
-
-const PLUGIN_ROOT = '/a/gregoor-private-marketplace-app';
+import { buildPluginPath, navigateToPath } from '../utils/navigation';
 
 export function Gallery() {
-  const navigate = useNavigate();
+  const appEvents = getAppEvents();
+  const styles = useStyles2(getStyles);
+
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
-  const [selectedDatasources, setSelectedDatasources] = useState<string[]>([]);
-
-  const appEvents = getAppEvents();
+  const [selectedTag, setSelectedTag] = useState('');
+  const [selectedDatasourceType, setSelectedDatasourceType] = useState('');
 
   const fetchTemplates = useCallback(async () => {
     setLoading(true);
     setError(null);
+
     try {
-      const data = await listTemplates();
-      setTemplates(data);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to load templates';
-      setError(msg);
+      setTemplates(await listTemplates());
+    } catch (loadError) {
+      const message = loadError instanceof Error ? loadError.message : 'Failed to load templates';
+      setError(message);
       appEvents.publish({
         type: AppEvents.alertError.name,
-        payload: ['Failed to load templates', msg],
+        payload: ['Failed to load templates', message],
       });
     } finally {
       setLoading(false);
@@ -54,194 +41,167 @@ export function Gallery() {
     fetchTemplates();
   }, [fetchTemplates]);
 
-  // Collect all unique tags and datasource types across all templates
   const allTags = useMemo(() => {
-    const tagSet = new Set<string>();
-    templates.forEach((t) => t.metadata.tags?.forEach((tag) => tagSet.add(tag)));
-    return Array.from(tagSet).sort();
+    const uniqueTags = new Set<string>();
+    templates.forEach((template) => template.metadata.tags?.forEach((tag) => uniqueTags.add(tag)));
+    return Array.from(uniqueTags).sort();
   }, [templates]);
 
   const allDatasourceTypes = useMemo(() => {
-    const dsSet = new Set<string>();
-    templates.forEach((t) =>
-      t.metadata.requiredDatasources?.forEach((ds) => dsSet.add(ds.type))
+    const uniqueTypes = new Set<string>();
+    templates.forEach((template) =>
+      template.metadata.requiredDatasources?.forEach((datasource) => uniqueTypes.add(datasource.type))
     );
-    return Array.from(dsSet).sort();
+    return Array.from(uniqueTypes).sort();
   }, [templates]);
 
-  // Filter templates based on search + selected tags + selected datasources
   const filteredTemplates = useMemo(() => {
-    const q = searchQuery.toLowerCase();
-    return templates.filter((t) => {
-      const meta = t.metadata;
+    const normalizedQuery = searchQuery.trim().toLowerCase();
 
-      // Text search across title and description
-      if (q) {
-        const searchable = `${meta.title} ${meta.shortDescription} ${meta.tags?.join(' ')}`.toLowerCase();
-        if (!searchable.includes(q)) {
-          return false;
-        }
+    return templates.filter((template) => {
+      const searchableText = [
+        template.metadata.title,
+        template.metadata.shortDescription,
+        ...(template.metadata.tags ?? []),
+      ]
+        .join(' ')
+        .toLowerCase();
+
+      if (normalizedQuery && !searchableText.includes(normalizedQuery)) {
+        return false;
       }
 
-      // Tag filter (must have all selected tags)
-      if (selectedTags.length > 0) {
-        const templateTags = meta.tags || [];
-        if (!selectedTags.every((tag) => templateTags.includes(tag))) {
-          return false;
-        }
+      if (selectedTag && !template.metadata.tags?.includes(selectedTag)) {
+        return false;
       }
 
-      // Datasource filter (must have all selected datasource types)
-      if (selectedDatasources.length > 0) {
-        const templateDs = (meta.requiredDatasources || []).map((ds) => ds.type);
-        if (!selectedDatasources.every((ds) => templateDs.includes(ds))) {
-          return false;
-        }
+      if (
+        selectedDatasourceType &&
+        !(template.metadata.requiredDatasources ?? []).some((item) => item.type === selectedDatasourceType)
+      ) {
+        return false;
       }
 
       return true;
     });
-  }, [templates, searchQuery, selectedTags, selectedDatasources]);
-
-  const tagSelectOptions = allTags.map((t) => ({ label: t, value: t }));
-  const dsSelectOptions = allDatasourceTypes.map((t) => ({ label: t, value: t }));
+  }, [searchQuery, selectedDatasourceType, selectedTag, templates]);
 
   return (
-    <div style={{ padding: '24px' }}>
-      {/* Header */}
-      <Stack justifyContent="space-between" alignItems="flex-start" wrap="wrap" gap={2}>
-        <Stack direction="column" gap={0.5}>
-          <Text element="h1" variant="h2">
-            Dashboard Marketplace
-          </Text>
-          <Text color="secondary">
-            Browse, import, and share reusable dashboards within your organization.
-          </Text>
-        </Stack>
-        <Button
-          icon="upload"
-          variant="primary"
-          onClick={() => navigate(`${PLUGIN_ROOT}/upload`)}
-        >
-          Upload template
-        </Button>
-      </Stack>
+    <div className={styles.page}>
+      <div className={styles.hero}>
+        <div>
+          <h1 className={styles.title}>Dashboard Marketplace</h1>
+          <p className={styles.subtitle}>
+            Browse, import, and publish reusable Grafana dashboard templates.
+          </p>
+        </div>
 
-      {/* Filters */}
-      <Stack direction="row" gap={2} wrap="wrap" style={{ marginTop: '20px', marginBottom: '20px' }}>
-        <div style={{ minWidth: '280px', flex: 1 }}>
-          <FilterInput
-            placeholder="Search by title, description or tags…"
-            value={searchQuery}
-            onChange={setSearchQuery}
-          />
-        </div>
-        <div style={{ minWidth: '200px' }}>
-          <MultiSelect
-            placeholder="Filter by tags"
-            options={tagSelectOptions}
-            value={selectedTags}
-            onChange={(vals) => setSelectedTags(vals.map((v) => String(v.value)))}
-            closeMenuOnSelect={false}
-            isClearable
-          />
-        </div>
-        <div style={{ minWidth: '200px' }}>
-          <MultiSelect
-            placeholder="Filter by datasource"
-            options={dsSelectOptions}
-            value={selectedDatasources}
-            onChange={(vals) => setSelectedDatasources(vals.map((v) => String(v.value)))}
-            closeMenuOnSelect={false}
-            isClearable
-          />
-        </div>
-        {(selectedTags.length > 0 || selectedDatasources.length > 0 || searchQuery) && (
-          <Button
-            variant="secondary"
-            size="sm"
+        <button className={styles.primaryButton} onClick={() => navigateToPath(buildPluginPath({ type: 'upload' }))}>
+          Upload template
+        </button>
+      </div>
+
+      <div className={styles.filters}>
+        <input
+          className={styles.input}
+          value={searchQuery}
+          onChange={(event) => setSearchQuery(event.currentTarget.value)}
+          placeholder="Search by title, description, or tags..."
+        />
+
+        <select
+          className={styles.select}
+          value={selectedTag}
+          onChange={(event) => setSelectedTag(event.currentTarget.value)}
+        >
+          <option value="">All tags</option>
+          {allTags.map((tag) => (
+            <option key={tag} value={tag}>
+              {tag}
+            </option>
+          ))}
+        </select>
+
+        <select
+          className={styles.select}
+          value={selectedDatasourceType}
+          onChange={(event) => setSelectedDatasourceType(event.currentTarget.value)}
+        >
+          <option value="">All datasources</option>
+          {allDatasourceTypes.map((type) => (
+            <option key={type} value={type}>
+              {type}
+            </option>
+          ))}
+        </select>
+
+        {(searchQuery || selectedTag || selectedDatasourceType) && (
+          <button
+            className={styles.secondaryButton}
             onClick={() => {
               setSearchQuery('');
-              setSelectedTags([]);
-              setSelectedDatasources([]);
+              setSelectedTag('');
+              setSelectedDatasourceType('');
             }}
           >
             Clear filters
-          </Button>
+          </button>
         )}
-      </Stack>
+      </div>
 
-      {/* Active tag chips */}
-      {selectedTags.length > 0 && (
-        <Stack gap={1} style={{ marginBottom: '16px' }}>
-          {selectedTags.map((tag) => (
-            <Tag
-              key={tag}
-              name={tag}
-              onClick={() => setSelectedTags((prev) => prev.filter((t) => t !== tag))}
-            />
-          ))}
-        </Stack>
-      )}
-
-      {/* Loading / Error / Empty / Grid */}
-      {loading && <LoadingBar width={300} />}
+      {loading && <div className={styles.infoBox}>Loading templates...</div>}
 
       {!loading && error && (
-        <Alert title="Could not load templates" severity="error">
-          {error}{' '}
-          <TextLink onClick={fetchTemplates} href="">
+        <div className={styles.errorBox}>
+          <strong>Could not load templates</strong>
+          <div>{error}</div>
+          <button className={styles.secondaryButton} onClick={fetchTemplates}>
             Retry
-          </TextLink>
-        </Alert>
+          </button>
+        </div>
       )}
 
       {!loading && !error && templates.length === 0 && (
-        <EmptyState
-          variant="call-to-action"
-          message="No templates yet"
-          button={
-            <Button
-              icon="upload"
-              variant="primary"
-              onClick={() => navigate(`${PLUGIN_ROOT}/upload`)}
-            >
-              Upload your first template
-            </Button>
-          }
-        >
-          <Text color="secondary">
-            Upload a dashboard template to make it available to your team.
-          </Text>
-        </EmptyState>
+        <div className={styles.infoBox}>
+          <strong>No templates available yet</strong>
+          <p className={styles.subtitle}>Start by publishing a dashboard template for your team.</p>
+          <button className={styles.primaryButton} onClick={() => navigateToPath(buildPluginPath({ type: 'upload' }))}>
+            Upload your first template
+          </button>
+        </div>
       )}
 
       {!loading && !error && templates.length > 0 && filteredTemplates.length === 0 && (
-        <EmptyState variant="not-found" message="No templates match your filters">
-          <Button variant="secondary" onClick={() => { setSearchQuery(''); setSelectedTags([]); setSelectedDatasources([]); }}>
+        <div className={styles.infoBox}>
+          <strong>No templates match the current filters</strong>
+          <button
+            className={styles.secondaryButton}
+            onClick={() => {
+              setSearchQuery('');
+              setSelectedTag('');
+              setSelectedDatasourceType('');
+            }}
+          >
             Clear filters
-          </Button>
-        </EmptyState>
+          </button>
+        </div>
       )}
 
       {!loading && !error && filteredTemplates.length > 0 && (
         <>
-          <Text color="secondary" style={{ display: 'block', marginBottom: '16px' }}>
-            {filteredTemplates.length} template{filteredTemplates.length !== 1 ? 's' : ''}
-            {filteredTemplates.length !== templates.length && ` (filtered from ${templates.length})`}
-          </Text>
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-              gap: '16px',
-            }}
-          >
+          <div className={styles.summary}>
+            {filteredTemplates.length} template{filteredTemplates.length === 1 ? '' : 's'}
+            {filteredTemplates.length !== templates.length ? ` (filtered from ${templates.length})` : ''}
+          </div>
+
+          <div className={styles.grid}>
             {filteredTemplates.map((template) => (
               <TemplateCard
                 key={template.metadata.id}
                 template={template}
-                onClick={() => navigate(`${PLUGIN_ROOT}/template/${template.metadata.id}`)}
+                onClick={() =>
+                  navigateToPath(buildPluginPath({ type: 'template', templateId: template.metadata.id }))
+                }
               />
             ))}
           </div>
@@ -249,4 +209,104 @@ export function Gallery() {
       )}
     </div>
   );
+}
+
+function getStyles(theme: GrafanaTheme2) {
+  return {
+    page: css({
+      padding: theme.spacing(3),
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(2),
+    }),
+    hero: css({
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      gap: theme.spacing(2),
+      flexWrap: 'wrap',
+    }),
+    title: css({
+      margin: 0,
+      fontSize: theme.typography.h2.fontSize,
+      lineHeight: theme.typography.h2.lineHeight,
+    }),
+    subtitle: css({
+      margin: `${theme.spacing(1)} 0 0`,
+      color: theme.colors.text.secondary,
+    }),
+    filters: css({
+      display: 'grid',
+      gridTemplateColumns: 'minmax(260px, 1fr) 220px 220px auto',
+      gap: theme.spacing(1.5),
+      [theme.breakpoints.down('lg')]: {
+        gridTemplateColumns: '1fr',
+      },
+    }),
+    input: css({
+      width: '100%',
+      minHeight: '40px',
+      padding: `0 ${theme.spacing(1.5)}`,
+      borderRadius: theme.shape.radius.default,
+      border: `1px solid ${theme.colors.border.medium}`,
+      background: theme.colors.background.primary,
+      color: theme.colors.text.primary,
+    }),
+    select: css({
+      width: '100%',
+      minHeight: '40px',
+      padding: `0 ${theme.spacing(1.5)}`,
+      borderRadius: theme.shape.radius.default,
+      border: `1px solid ${theme.colors.border.medium}`,
+      background: theme.colors.background.primary,
+      color: theme.colors.text.primary,
+    }),
+    primaryButton: css({
+      minHeight: '40px',
+      padding: `0 ${theme.spacing(2)}`,
+      borderRadius: theme.shape.radius.default,
+      border: `1px solid ${theme.colors.primary.border}`,
+      background: theme.colors.primary.main,
+      color: theme.colors.primary.contrastText,
+      fontWeight: theme.typography.fontWeightMedium,
+      cursor: 'pointer',
+    }),
+    secondaryButton: css({
+      minHeight: '40px',
+      padding: `0 ${theme.spacing(2)}`,
+      borderRadius: theme.shape.radius.default,
+      border: `1px solid ${theme.colors.border.medium}`,
+      background: theme.colors.background.secondary,
+      color: theme.colors.text.primary,
+      fontWeight: theme.typography.fontWeightMedium,
+      cursor: 'pointer',
+    }),
+    infoBox: css({
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(1.5),
+      padding: theme.spacing(2),
+      borderRadius: theme.shape.radius.default,
+      border: `1px solid ${theme.colors.border.weak}`,
+      background: theme.colors.background.secondary,
+    }),
+    errorBox: css({
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(1.5),
+      padding: theme.spacing(2),
+      borderRadius: theme.shape.radius.default,
+      border: `1px solid ${theme.colors.error.border}`,
+      background: theme.colors.error.transparent,
+      color: theme.colors.text.primary,
+    }),
+    summary: css({
+      color: theme.colors.text.secondary,
+    }),
+    grid: css({
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+      gap: theme.spacing(2),
+    }),
+  };
 }

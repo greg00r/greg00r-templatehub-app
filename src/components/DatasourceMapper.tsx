@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
-import { Field, Select, Text, Stack, Alert } from '@grafana/ui';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Alert, Field, Select, Stack, Text } from '@grafana/ui';
 import { getDataSources } from '../api/grafana';
-import type { DatasourceMapping, GrafanaDataSource, GrafanaDashboard } from '../types';
+import type { DatasourceMapping, GrafanaDashboard, GrafanaDataSource } from '../types';
 
 interface Props {
   dashboard: GrafanaDashboard;
@@ -9,37 +9,46 @@ interface Props {
   onChange: (mappings: DatasourceMapping[]) => void;
 }
 
-/**
- * Scans the dashboard JSON for unique datasource UIDs and lets the user
- * map each one to a locally available datasource.
- */
+interface TemplateDatasourceRef {
+  id: string;
+  type: string;
+}
+
 export function DatasourceMapper({ dashboard, mappings, onChange }: Props) {
   const [localDatasources, setLocalDatasources] = useState<GrafanaDataSource[]>([]);
-  const [templateUids, setTemplateUids] = useState<Array<{ uid: string; type: string }>>([]);
 
   useEffect(() => {
-    getDataSources().then(setLocalDatasources).catch(console.error);
+    getDataSources().then(setLocalDatasources).catch(() => setLocalDatasources([]));
   }, []);
 
+  const templateDatasourceRefs = useMemo(
+    () => extractDatasourceRefs(dashboard),
+    [dashboard]
+  );
+
   useEffect(() => {
-    const found = extractDatasourceUids(dashboard);
-    setTemplateUids(found);
+    const existingTemplateIds = new Set(mappings.map((mapping) => mapping.templateUid));
+    const inferredMappings = templateDatasourceRefs
+      .filter((ref) => !existingTemplateIds.has(ref.id))
+      .map((ref) => {
+        const suggestedDatasource = localDatasources.find((datasource) => datasource.type === ref.type);
 
-    // Initialize mappings for UIDs that don't have one yet
-    const existing = new Set(mappings.map((m) => m.templateUid));
-    const newMappings: DatasourceMapping[] = found
-      .filter((f) => !existing.has(f.uid))
-      .map((f) => ({ templateUid: f.uid, templateType: f.type, localUid: '' }));
+        return {
+          templateUid: ref.id,
+          templateType: ref.type,
+          localUid: suggestedDatasource?.uid ?? '',
+        };
+      });
 
-    if (newMappings.length > 0) {
-      onChange([...mappings, ...newMappings]);
+    if (inferredMappings.length > 0) {
+      onChange([...mappings, ...inferredMappings]);
     }
-  }, [dashboard]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [localDatasources, mappings, onChange, templateDatasourceRefs]);
 
-  if (templateUids.length === 0) {
+  if (templateDatasourceRefs.length === 0) {
     return (
-      <Alert title="No datasource UIDs found" severity="info">
-        This dashboard does not contain explicit datasource UIDs; no mapping is needed.
+      <Alert title="No datasource mapping needed" severity="info">
+        This dashboard does not contain datasource UIDs or datasource placeholders.
       </Alert>
     );
   }
@@ -47,28 +56,36 @@ export function DatasourceMapper({ dashboard, mappings, onChange }: Props) {
   return (
     <Stack direction="column" gap={2}>
       <Text color="secondary">
-        Map template datasource UIDs to datasources available in this Grafana instance.
+        Map datasource placeholders or UIDs from the template to datasources available in this Grafana instance.
       </Text>
-      {templateUids.map((tmpl) => {
-        const mapping = mappings.find((m) => m.templateUid === tmpl.uid);
+
+      {templateDatasourceRefs.map((ref) => {
+        const mapping = mappings.find((item) => item.templateUid === ref.id);
         const options = localDatasources
-          .filter((ds) => !tmpl.type || ds.type === tmpl.type || tmpl.type === 'default')
-          .map((ds) => ({ label: `${ds.name} (${ds.type})`, value: ds.uid }));
+          .filter((datasource) => !ref.type || datasource.type === ref.type)
+          .map((datasource) => ({
+            label: `${datasource.name} (${datasource.type})`,
+            value: datasource.uid,
+          }));
+
+        const selectedOption = options.find((option) => option.value === mapping?.localUid);
 
         return (
           <Field
-            key={tmpl.uid}
-            label={`Template UID: ${tmpl.uid}`}
-            description={tmpl.type ? `Type: ${tmpl.type}` : undefined}
+            key={ref.id}
+            label={ref.id}
+            description={ref.type ? `Expected type: ${ref.type}` : undefined}
           >
             <Select
               options={options}
-              value={mapping?.localUid || ''}
-              onChange={(val) => {
-                const updated = mappings.map((m) =>
-                  m.templateUid === tmpl.uid ? { ...m, localUid: String(val.value) } : m
+              value={selectedOption}
+              onChange={(item) => {
+                const localUid = String(item.value ?? '');
+                onChange(
+                  mappings.map((current) =>
+                    current.templateUid === ref.id ? { ...current, localUid } : current
+                  )
                 );
-                onChange(updated);
               }}
               placeholder="Select local datasource"
               isClearable
@@ -80,26 +97,39 @@ export function DatasourceMapper({ dashboard, mappings, onChange }: Props) {
   );
 }
 
-// ─── Helper: extract unique datasource UIDs from a dashboard JSON ─────────────
+function extractDatasourceRefs(node: unknown, seen = new Map<string, string>()): TemplateDatasourceRef[] {
+  if (Array.isArray(node)) {
+    node.forEach((item) => extractDatasourceRefs(item, seen));
+    return Array.from(seen.entries()).map(([id, type]) => ({ id, type }));
+  }
 
-function extractDatasourceUids(
-  obj: unknown,
-  seen = new Map<string, string>()
-): Array<{ uid: string; type: string }> {
-  if (Array.isArray(obj)) {
-    obj.forEach((item) => extractDatasourceUids(item, seen));
-  } else if (obj !== null && typeof obj === 'object') {
-    const record = obj as Record<string, unknown>;
-    for (const key of Object.keys(record)) {
-      if (key === 'datasource' && typeof record[key] === 'object' && record[key] !== null) {
-        const ds = record[key] as { uid?: string; type?: string };
-        if (ds.uid && ds.uid !== '-- Grafana --' && !ds.uid.startsWith('${')) {
-          seen.set(ds.uid, ds.type ?? 'unknown');
-        }
-      } else {
-        extractDatasourceUids(record[key], seen);
-      }
+  if (!node || typeof node !== 'object') {
+    return Array.from(seen.entries()).map(([id, type]) => ({ id, type }));
+  }
+
+  const record = node as Record<string, unknown>;
+
+  for (const [key, value] of Object.entries(record)) {
+    if (key !== 'datasource') {
+      extractDatasourceRefs(value, seen);
+      continue;
+    }
+
+    if (typeof value === 'string') {
+      seen.set(value, seen.get(value) ?? '');
+      continue;
+    }
+
+    if (!value || typeof value !== 'object') {
+      continue;
+    }
+
+    const datasource = value as { uid?: string; type?: string; name?: string };
+    const identifier = datasource.uid || datasource.name;
+    if (identifier && identifier !== '-- Grafana --') {
+      seen.set(identifier, datasource.type ?? seen.get(identifier) ?? '');
     }
   }
-  return Array.from(seen.entries()).map(([uid, type]) => ({ uid, type }));
+
+  return Array.from(seen.entries()).map(([id, type]) => ({ id, type }));
 }

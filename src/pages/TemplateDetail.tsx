@@ -1,71 +1,64 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
-import {
-  Alert,
-  Badge,
-  Button,
-  Icon,
-  LoadingBar,
-  Stack,
-  Tag,
-  Text,
-  useStyles2,
-} from '@grafana/ui';
-import { GrafanaTheme2 } from '@grafana/data';
 import { css } from '@emotion/css';
-import { getTemplateMetadata, getTemplateVariables, getTemplateImageUrl } from '../api/templates';
+import { GrafanaTheme2 } from '@grafana/data';
+import { Alert, Button, LoadingBar, Stack, Tag, Text, useStyles2 } from '@grafana/ui';
 import { checkDatasourceAvailability } from '../api/grafana';
+import { getTemplateImageUrl, getTemplateMetadata, getTemplateVariables } from '../api/templates';
 import { ImportModal } from '../components/ImportModal';
+import { MarkdownContent } from '../components/MarkdownContent';
 import type { TemplateMetadata, TemplateVariables } from '../types';
+import { buildPluginPath, navigateToPath } from '../utils/navigation';
 
-const PLUGIN_ROOT = '/a/gregoor-private-marketplace-app';
+interface Props {
+  templateId?: string;
+}
 
-export function TemplateDetail() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+export function TemplateDetail({ templateId }: Props) {
   const styles = useStyles2(getStyles);
 
   const [metadata, setMetadata] = useState<TemplateMetadata | null>(null);
   const [variables, setVariables] = useState<TemplateVariables | null>(null);
-  const [dsAvailability, setDsAvailability] = useState<Record<string, boolean>>({});
+  const [datasourceAvailability, setDatasourceAvailability] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    if (!id) { return; }
+  const loadTemplate = useCallback(async () => {
+    if (!templateId) {
+      return;
+    }
+
     setLoading(true);
     setError(null);
-    try {
-      const [meta, vars] = await Promise.all([
-        getTemplateMetadata(id),
-        getTemplateVariables(id),
-      ]);
-      setMetadata(meta);
-      setVariables(vars);
 
-      // Check datasource availability
-      if (meta.requiredDatasources?.length) {
-        const types = meta.requiredDatasources.map((ds) => ds.type);
-        const avail = await checkDatasourceAvailability(types);
-        setDsAvailability(avail);
+    try {
+      const [templateMetadata, templateVariables] = await Promise.all([
+        getTemplateMetadata(templateId),
+        getTemplateVariables(templateId),
+      ]);
+
+      setMetadata(templateMetadata);
+      setVariables(templateVariables);
+
+      const requiredTypes = templateMetadata.requiredDatasources?.map((item) => item.type) ?? [];
+      if (requiredTypes.length > 0) {
+        setDatasourceAvailability(await checkDatasourceAvailability(requiredTypes));
       }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load template details');
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Failed to load template details');
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [templateId]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    loadTemplate();
+  }, [loadTemplate]);
 
   if (loading) {
     return (
       <div style={{ padding: '24px' }}>
-        <LoadingBar width={300} />
+        <LoadingBar width={320} />
       </div>
     );
   }
@@ -74,152 +67,146 @@ export function TemplateDetail() {
     return (
       <div style={{ padding: '24px' }}>
         <Alert title="Failed to load template" severity="error">
-          {error}
+          {error ?? 'Unknown error'}
         </Alert>
-        <Button variant="secondary" onClick={() => navigate(PLUGIN_ROOT)} style={{ marginTop: '16px' }}>
-          <Icon name="arrow-left" /> Back to gallery
+        <Button
+          variant="secondary"
+          onClick={() => navigateToPath(buildPluginPath({ type: 'gallery' }))}
+          style={{ marginTop: '16px' }}
+        >
+          Back to gallery
         </Button>
       </div>
     );
   }
 
-  const allDsAvailable = metadata.requiredDatasources?.every(
-    (ds) => dsAvailability[ds.type] !== false
-  );
+  const allRequiredDatasourcesAvailable =
+    (metadata.requiredDatasources ?? []).length === 0 ||
+    metadata.requiredDatasources.every((datasource) => datasourceAvailability[datasource.type] !== false);
 
   return (
     <div style={{ padding: '24px', maxWidth: '960px' }}>
-      {/* Back link */}
       <Button
         variant="secondary"
         size="sm"
         fill="text"
-        onClick={() => navigate(PLUGIN_ROOT)}
-        style={{ marginBottom: '16px' }}
+        onClick={() => navigateToPath(buildPluginPath({ type: 'gallery' }))}
       >
-        <Icon name="arrow-left" /> Back to gallery
+        Back to gallery
       </Button>
 
-      {/* Header row */}
-      <Stack justifyContent="space-between" alignItems="flex-start" wrap="wrap" gap={2}>
-        <Stack direction="column" gap={0.5}>
-          <Text element="h1" variant="h2">{metadata.title}</Text>
-          <Stack gap={1} wrap="wrap">
-            <Text color="secondary">by {metadata.author}</Text>
-            <Text color="secondary">·</Text>
-            <Text color="secondary">v{metadata.version}</Text>
-            <Text color="secondary">·</Text>
-            <Text color="secondary">Updated {metadata.updatedAt}</Text>
+      <div style={{ marginTop: '12px' }}>
+        <Stack justifyContent="space-between" alignItems="flex-start" wrap="wrap" gap={2}>
+          <Stack direction="column" gap={0.5}>
+            <Text element="h1" variant="h2">
+              {metadata.title}
+            </Text>
+            <Stack gap={1} wrap="wrap">
+              <Text color="secondary">by {metadata.author}</Text>
+              <Text color="secondary">version {metadata.version}</Text>
+              <Text color="secondary">updated {metadata.updatedAt}</Text>
+            </Stack>
           </Stack>
-        </Stack>
-        <Button
-          icon="import"
-          variant="primary"
-          size="lg"
-          onClick={() => setShowImportModal(true)}
-        >
-          Import template
-        </Button>
-      </Stack>
 
-      {/* Tags */}
-      {metadata.tags?.length > 0 && (
-        <Stack gap={1} style={{ marginTop: '12px' }}>
-          {metadata.tags.map((tag) => (
-            <Tag key={tag} name={tag} />
-          ))}
+          <Button icon="import" variant="primary" onClick={() => setShowImportModal(true)}>
+            Import template
+          </Button>
         </Stack>
+      </div>
+
+      {metadata.tags?.length > 0 && (
+        <div style={{ marginTop: '12px' }}>
+          <Stack gap={1} wrap="wrap">
+            {metadata.tags.map((tag) => (
+              <Tag key={tag} name={tag} />
+            ))}
+          </Stack>
+        </div>
       )}
 
-      {/* Main content */}
       <div className={styles.contentGrid}>
-        {/* Left: image + datasource requirements */}
         <div className={styles.sidebar}>
-          {id && (
+          {templateId && (
             <img
-              src={getTemplateImageUrl(id)}
+              src={getTemplateImageUrl(templateId)}
               alt={`${metadata.title} preview`}
               className={styles.previewImage}
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none';
+              onError={(event) => {
+                (event.target as HTMLImageElement).style.display = 'none';
               }}
             />
           )}
 
-          {/* Required Datasources */}
           {metadata.requiredDatasources?.length > 0 && (
             <div className={styles.infoBox}>
               <Text variant="h5">Required Datasources</Text>
-              <Stack direction="column" gap={1} style={{ marginTop: '8px' }}>
-                {metadata.requiredDatasources.map((ds) => {
-                  const available = dsAvailability[ds.type];
-                  return (
-                    <Stack key={ds.type} justifyContent="space-between" alignItems="center">
-                      <Stack gap={1} alignItems="center">
-                        <Icon name="database" />
-                        <Text>{ds.name}</Text>
-                        <Text color="secondary" variant="bodySmall">({ds.type})</Text>
+              <div style={{ marginTop: '8px' }}>
+                <Stack direction="column" gap={1}>
+                  {metadata.requiredDatasources.map((datasource) => {
+                    const available = datasourceAvailability[datasource.type];
+                    return (
+                      <Stack key={`${datasource.type}-${datasource.name}`} justifyContent="space-between" alignItems="center">
+                        <Stack gap={1} alignItems="center">
+                          <Text>{datasource.name}</Text>
+                        <Text color="secondary" variant="bodySmall">
+                          ({datasource.type})
+                        </Text>
                       </Stack>
-                      {available === undefined ? null : available ? (
-                        <Badge text="Available" color="green" icon="check" />
-                      ) : (
-                        <Badge text="Missing" color="red" icon="exclamation-triangle" />
-                      )}
+                      <span
+                        className={available ? styles.statusAvailable : styles.statusMissing}
+                      >
+                        {available ? 'Available' : 'Missing'}
+                      </span>
                     </Stack>
                   );
                 })}
-              </Stack>
-              {!allDsAvailable && (
-                <Alert
-                  title="Some datasources are missing"
-                  severity="warning"
-                  style={{ marginTop: '8px' }}
-                >
-                  Install the missing datasources before importing this dashboard.
+                </Stack>
+              </div>
+
+              {!allRequiredDatasourcesAvailable && (
+                <Alert title="Some datasources are missing" severity="warning" style={{ marginTop: '12px' }}>
+                  You can still import the dashboard, but datasource mapping will need attention.
                 </Alert>
               )}
             </div>
           )}
 
-          {/* Variables summary */}
-          {variables?.variables?.length > 0 && (
+          {variables?.variables?.length ? (
             <div className={styles.infoBox}>
-              <Text variant="h5">Template Variables ({variables.variables.length})</Text>
-              <Stack direction="column" gap={0.5} style={{ marginTop: '8px' }}>
-                {variables.variables.map((v) => (
-                  <Stack key={v.name} gap={1} alignItems="center">
-                    <Tag name={v.type} colorIndex={2} />
-                    <Text variant="bodySmall">
-                      <strong>{v.label || v.name}</strong>
-                      {v.required && <span style={{ color: 'red' }}> *</span>}
-                      {v.description && (
-                        <span style={{ marginLeft: '4px', opacity: 0.7 }}>— {v.description}</span>
+              <Text variant="h5">Variables ({variables.variables.length})</Text>
+              <div style={{ marginTop: '8px' }}>
+                <Stack direction="column" gap={1}>
+                  {variables.variables.map((variable) => (
+                    <div key={variable.name}>
+                      <Text variant="bodySmall">
+                        <strong>{variable.label || variable.name}</strong>
+                        {variable.required ? ' *' : ''}
+                      </Text>
+                      {variable.description && (
+                        <Text variant="bodySmall" color="secondary">
+                          {variable.description}
+                        </Text>
                       )}
-                    </Text>
-                  </Stack>
-                ))}
-              </Stack>
+                    </div>
+                  ))}
+                </Stack>
+              </div>
             </div>
-          )}
+          ) : null}
         </div>
 
-        {/* Right: long description */}
         <div className={styles.mainContent}>
           <Text variant="h4">Description</Text>
-          <div className={styles.markdown}>
-            {metadata.longDescription ? (
-              <ReactMarkdown>{metadata.longDescription}</ReactMarkdown>
-            ) : (
-              <Text color="secondary">{metadata.shortDescription}</Text>
-            )}
-          </div>
+          <MarkdownContent
+            className={styles.markdown}
+            content={metadata.longDescription || metadata.shortDescription}
+          />
         </div>
       </div>
 
-      {/* Import Modal */}
-      {showImportModal && id && variables && (
+      {showImportModal && templateId && variables && (
         <ImportModal
-          templateId={id}
+          templateId={templateId}
           metadata={metadata}
           variables={variables.variables}
           onDismiss={() => setShowImportModal(false)}
@@ -257,42 +244,61 @@ function getStyles(theme: GrafanaTheme2) {
       borderRadius: theme.shape.radius.default,
       border: `1px solid ${theme.colors.border.weak}`,
     }),
+    statusPill: css({
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minWidth: '84px',
+      padding: `${theme.spacing(0.5)} ${theme.spacing(1)}`,
+      borderRadius: '999px',
+      fontSize: theme.typography.bodySmall.fontSize,
+      fontWeight: theme.typography.fontWeightMedium,
+      border: `1px solid transparent`,
+    }),
+    statusAvailable: css({
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minWidth: '84px',
+      padding: `${theme.spacing(0.5)} ${theme.spacing(1)}`,
+      borderRadius: '999px',
+      fontSize: theme.typography.bodySmall.fontSize,
+      fontWeight: theme.typography.fontWeightMedium,
+      color: theme.colors.success.text,
+      background: theme.colors.success.transparent,
+      border: `1px solid ${theme.colors.success.border}`,
+    }),
+    statusMissing: css({
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minWidth: '84px',
+      padding: `${theme.spacing(0.5)} ${theme.spacing(1)}`,
+      borderRadius: '999px',
+      fontSize: theme.typography.bodySmall.fontSize,
+      fontWeight: theme.typography.fontWeightMedium,
+      color: theme.colors.error.text,
+      background: theme.colors.error.transparent,
+      border: `1px solid ${theme.colors.error.border}`,
+    }),
     mainContent: css({
       display: 'flex',
       flexDirection: 'column',
       gap: theme.spacing(2),
     }),
     markdown: css({
-      'h1, h2, h3, h4, h5, h6': {
-        marginTop: theme.spacing(2),
-        marginBottom: theme.spacing(1),
-        color: theme.colors.text.primary,
-      },
       p: {
-        marginBottom: theme.spacing(1),
         color: theme.colors.text.secondary,
         lineHeight: 1.6,
       },
       'ul, ol': {
-        paddingLeft: theme.spacing(3),
         color: theme.colors.text.secondary,
+        paddingLeft: theme.spacing(3),
       },
       code: {
         background: theme.colors.background.secondary,
+        borderRadius: theme.shape.radius.default,
         padding: `2px ${theme.spacing(0.5)}`,
-        borderRadius: theme.shape.radius.default,
-        fontFamily: theme.typography.fontFamilyMonospace,
-        fontSize: theme.typography.bodySmall.fontSize,
-      },
-      pre: {
-        background: theme.colors.background.secondary,
-        padding: theme.spacing(1.5),
-        borderRadius: theme.shape.radius.default,
-        overflowX: 'auto',
-        code: {
-          background: 'transparent',
-          padding: 0,
-        },
       },
     }),
   };

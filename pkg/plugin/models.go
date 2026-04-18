@@ -22,18 +22,18 @@ type RequiredDatasource struct {
 
 // TemplateVariable describes a single variable shown during import.
 type TemplateVariable struct {
-	Name         string   `json:"name"`
-	Label        string   `json:"label"`
-	Type         string   `json:"type"`
-	Description  string   `json:"description,omitempty"`
-	Default      string   `json:"default,omitempty"`
-	Required     bool     `json:"required,omitempty"`
-	Options      []string `json:"options,omitempty"`
-	Datasource   string   `json:"datasource,omitempty"`
-	Query        string   `json:"query,omitempty"`
-	Multi        bool     `json:"multi,omitempty"`
-	IncludeAll   bool     `json:"includeAll,omitempty"`
-	DatasourceType string `json:"datasourceType,omitempty"`
+	Name           string   `json:"name"`
+	Label          string   `json:"label"`
+	Type           string   `json:"type"`
+	Description    string   `json:"description,omitempty"`
+	Default        string   `json:"default,omitempty"`
+	Required       bool     `json:"required,omitempty"`
+	Options        []string `json:"options,omitempty"`
+	Datasource     string   `json:"datasource,omitempty"`
+	Query          string   `json:"query,omitempty"`
+	Multi          bool     `json:"multi,omitempty"`
+	IncludeAll     bool     `json:"includeAll,omitempty"`
+	DatasourceType string   `json:"datasourceType,omitempty"`
 }
 
 // TemplateVariables is the container stored in variables.json.
@@ -49,11 +49,11 @@ type Template struct {
 
 // PluginSettings holds the JSON data configured in the plugin's config page.
 type PluginSettings struct {
-	StorageBackend    string `json:"storageBackend"`    // "local" | "external"
-	LocalPath         string `json:"localPath"`
-	ExternalURL       string `json:"externalUrl"`
-	ExternalAuthType  string `json:"externalAuthType"`  // "none" | "bearer" | "basic"
-	ExternalAuthUser  string `json:"externalAuthUsername"`
+	StorageBackend   string `json:"storageBackend"` // "local" | "external"
+	LocalPath        string `json:"localPath"`
+	ExternalURL      string `json:"externalUrl"`
+	ExternalAuthType string `json:"externalAuthType"` // "none" | "bearer" | "basic"
+	ExternalAuthUser string `json:"externalAuthUsername"`
 }
 
 // PluginSecureSettings holds secrets (never returned to browser).

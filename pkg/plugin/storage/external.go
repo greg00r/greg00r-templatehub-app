@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -65,13 +66,20 @@ func (s *ExternalStorage) get(path string) ([]byte, error) {
 
 // ListTemplates calls GET /templates on the external API and returns each metadata blob.
 func (s *ExternalStorage) ListTemplates() ([][]byte, error) {
-	// NOTE: This stub assumes the external API returns a JSON array of metadata objects.
-	// Real implementation would unmarshal and re-marshal per-item.
 	data, err := s.get("/templates")
 	if err != nil {
 		return nil, err
 	}
-	// Return as a single-element slice; callers will merge.
+
+	var items []json.RawMessage
+	if err := json.Unmarshal(data, &items); err == nil {
+		results := make([][]byte, 0, len(items))
+		for _, item := range items {
+			results = append(results, item)
+		}
+		return results, nil
+	}
+
 	return [][]byte{data}, nil
 }
 
@@ -119,30 +127,46 @@ func (s *ExternalStorage) SaveTemplate(
 
 	addField := func(name string, data []byte) error {
 		fw, err := w.CreateFormField(name)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		_, err = fw.Write(data)
 		return err
 	}
 
-	if err := addField("templateJson", templateJSON); err != nil { return err }
-	if err := addField("metadata", metadataJSON); err != nil { return err }
-	if err := addField("variablesJson", variablesJSON); err != nil { return err }
+	if err := addField("templateJson", templateJSON); err != nil {
+		return err
+	}
+	if err := addField("metadata", metadataJSON); err != nil {
+		return err
+	}
+	if err := addField("variablesJson", variablesJSON); err != nil {
+		return err
+	}
 
 	if image != nil {
 		fw, err := w.CreateFormFile("image", "image.png")
-		if err != nil { return err }
-		if _, err = io.Copy(fw, image); err != nil { return err }
+		if err != nil {
+			return err
+		}
+		if _, err = io.Copy(fw, image); err != nil {
+			return err
+		}
 	}
 
 	w.Close()
 
 	req, err := http.NewRequest(http.MethodPost, s.baseURL+"/templates", &body)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	req.Header.Set("Content-Type", w.FormDataContentType())
 	s.addAuth(req)
 
 	resp, err := s.client.Do(req)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		msg, _ := io.ReadAll(resp.Body)
@@ -153,10 +177,14 @@ func (s *ExternalStorage) SaveTemplate(
 
 func (s *ExternalStorage) DeleteTemplate(id string) error {
 	req, err := http.NewRequest(http.MethodDelete, s.baseURL+"/templates/"+id, nil)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	s.addAuth(req)
 	resp, err := s.client.Do(req)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("upstream returned %d", resp.StatusCode)
@@ -166,10 +194,14 @@ func (s *ExternalStorage) DeleteTemplate(id string) error {
 
 func (s *ExternalStorage) Ping() error {
 	req, err := http.NewRequest(http.MethodGet, s.baseURL+"/health", nil)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	s.addAuth(req)
 	resp, err := s.client.Do(req)
-	if err != nil { return fmt.Errorf("external backend unreachable: %w", err) }
+	if err != nil {
+		return fmt.Errorf("external backend unreachable: %w", err)
+	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("external backend returned %d", resp.StatusCode)

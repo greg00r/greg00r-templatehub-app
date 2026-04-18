@@ -95,9 +95,10 @@ export interface GrafanaVariable {
   };
   options?: Array<{ value: string; text: string; selected?: boolean }>;
   query?: string;
-  datasource?: {
-    type: string;
-    uid: string;
+  datasource?: string | {
+    type?: string;
+    uid?: string;
+    name?: string;
   };
   multi?: boolean;
   includeAll?: boolean;

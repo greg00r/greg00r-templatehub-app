@@ -1,6 +1,8 @@
 package plugin
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,18 +14,20 @@ import (
 
 // Route patterns for resource dispatching.
 var (
-	reTemplatesList   = regexp.MustCompile(`^templates/?$`)
-	reTemplateByID    = regexp.MustCompile(`^templates/([^/]+)/?$`)
-	reTemplateImage   = regexp.MustCompile(`^templates/([^/]+)/image/?$`)
-	reTemplateJSON    = regexp.MustCompile(`^templates/([^/]+)/template/?$`)
-	reTemplateVars    = regexp.MustCompile(`^templates/([^/]+)/variables/?$`)
-	reHealth          = regexp.MustCompile(`^health/?$`)
-	reInitialize      = regexp.MustCompile(`^initialize/?$`)
+	reTemplatesList = regexp.MustCompile(`^templates/?$`)
+	reTemplateByID  = regexp.MustCompile(`^templates/([^/]+)/?$`)
+	reTemplateImage = regexp.MustCompile(`^templates/([^/]+)/image/?$`)
+	reTemplateJSON  = regexp.MustCompile(`^templates/([^/]+)/template/?$`)
+	reTemplateVars  = regexp.MustCompile(`^templates/([^/]+)/variables/?$`)
+	reHealth        = regexp.MustCompile(`^health/?$`)
+	reInitialize    = regexp.MustCompile(`^initialize/?$`)
 )
+
+const pluginID = "gregoor-private-marketplace-app"
 
 // handleResources is the main router for plugin resource calls.
 func (p *Plugin) handleResources(rw http.ResponseWriter, req *http.Request) {
-	path := strings.TrimPrefix(req.URL.Path, "/")
+	path := normalizeResourcePath(req.URL.Path)
 	method := req.Method
 
 	switch {
@@ -64,6 +68,19 @@ func (p *Plugin) handleResources(rw http.ResponseWriter, req *http.Request) {
 	}
 }
 
+func normalizeResourcePath(path string) string {
+	trimmed := strings.Trim(strings.TrimSpace(path), "/")
+	if trimmed == "" {
+		return ""
+	}
+
+	if idx := strings.Index(trimmed, "/resources/"); idx >= 0 {
+		return strings.Trim(trimmed[idx+len("/resources/"):], "/")
+	}
+
+	return strings.TrimPrefix(trimmed, "resources/")
+}
+
 // handleHealth returns 200 OK and pings the storage backend.
 func (p *Plugin) handleHealth(rw http.ResponseWriter, _ *http.Request) {
 	if err := p.storage.Ping(); err != nil {
@@ -94,12 +111,30 @@ func (p *Plugin) handleListTemplates(rw http.ResponseWriter, _ *http.Request) {
 
 	templates := make([]Template, 0, len(metadataBlobs))
 	for _, blob := range metadataBlobs {
+		var typedTemplates []Template
+		if err := json.Unmarshal(blob, &typedTemplates); err == nil {
+			templates = append(templates, typedTemplates...)
+			continue
+		}
+
+		var typedMetadata []TemplateMetadata
+		if err := json.Unmarshal(blob, &typedMetadata); err == nil {
+			for _, meta := range typedMetadata {
+				templates = append(templates, Template{
+					Metadata: meta,
+					ImageURL: fmt.Sprintf("/api/plugins/%s/resources/templates/%s/image", pluginID, meta.ID),
+				})
+			}
+			continue
+		}
+
 		var meta TemplateMetadata
 		if err := json.Unmarshal(blob, &meta); err != nil {
-			continue // skip malformed entries
+			continue
 		}
 		templates = append(templates, Template{
 			Metadata: meta,
+			ImageURL: fmt.Sprintf("/api/plugins/%s/resources/templates/%s/image", pluginID, meta.ID),
 		})
 	}
 
@@ -157,82 +192,56 @@ func (p *Plugin) handleGetImage(rw http.ResponseWriter, _ *http.Request, id stri
 
 // handleUploadTemplate handles multipart/form-data POST for new templates.
 func (p *Plugin) handleUploadTemplate(rw http.ResponseWriter, req *http.Request) {
-	// Limit upload to 20 MB
-	if err := req.ParseMultipartForm(20 << 20); err != nil {
-		jsonError(rw, "parsing multipart form: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	templateJSON := []byte(req.FormValue("templateJson"))
-	metadataJSON := []byte(req.FormValue("metadata"))
-	variablesJSON := []byte(req.FormValue("variablesJson"))
-
-	if len(templateJSON) == 0 {
-		jsonError(rw, "templateJson is required", http.StatusBadRequest)
-		return
-	}
-	if len(metadataJSON) == 0 {
-		jsonError(rw, "metadata is required", http.StatusBadRequest)
-		return
-	}
-
-	// Parse and enrich metadata
-	var meta TemplateMetadata
-	if err := json.Unmarshal(metadataJSON, &meta); err != nil {
-		jsonError(rw, "invalid metadata JSON: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// Generate ID from title if not provided
-	if meta.ID == "" {
-		meta.ID = slugify(meta.Title)
-	}
-
-	// Stamp timestamps
-	now := time.Now().UTC().Format("2006-01-02")
-	if meta.CreatedAt == "" {
-		meta.CreatedAt = now
-	}
-	meta.UpdatedAt = now
-
-	// Re-marshal enriched metadata
-	enrichedMeta, err := json.Marshal(meta)
+	contentType := req.Header.Get("Content-Type")
+	parsedUpload, err := parseUploadTemplateRequest(req, contentType)
 	if err != nil {
+		p.logger.Error("failed to parse upload request", "contentType", contentType, "error", err)
+		jsonError(rw, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if parsedUpload.metadata.Title == "" {
+		p.logger.Warn("upload rejected because metadata.title is missing")
+		jsonError(rw, "metadata.title is required", http.StatusBadRequest)
+		return
+	}
+
+	if parsedUpload.metadata.ID == "" {
+		parsedUpload.metadata.ID = slugify(parsedUpload.metadata.Title)
+	}
+
+	now := time.Now().UTC().Format("2006-01-02")
+	if parsedUpload.metadata.CreatedAt == "" {
+		parsedUpload.metadata.CreatedAt = now
+	}
+	parsedUpload.metadata.UpdatedAt = now
+
+	enrichedMeta, err := json.Marshal(parsedUpload.metadata)
+	if err != nil {
+		p.logger.Error("failed to marshal upload metadata", "templateId", parsedUpload.metadata.ID, "error", err)
 		jsonError(rw, "re-marshalling metadata: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Handle optional image
-	var imageReader io.Reader
-	var imageMime string
-	imageFile, imageHeader, imgErr := req.FormFile("image")
-	if imgErr == nil {
-		defer imageFile.Close()
-		imageReader = imageFile
-		imageMime = imageHeader.Header.Get("Content-Type")
-		if imageMime == "" {
-			imageMime = "image/png"
-		}
-	}
-
-	// Default empty variables.json
-	if len(variablesJSON) == 0 {
-		variablesJSON = []byte(`{"variables":[]}`)
+	if len(parsedUpload.variablesJSON) == 0 {
+		parsedUpload.variablesJSON = []byte(`{"variables":[]}`)
 	}
 
 	if err := p.storage.SaveTemplate(
-		meta.ID,
-		templateJSON,
+		parsedUpload.metadata.ID,
+		parsedUpload.templateJSON,
 		enrichedMeta,
-		variablesJSON,
-		imageReader,
-		imageMime,
+		parsedUpload.variablesJSON,
+		parsedUpload.imageReader,
+		parsedUpload.imageMime,
 	); err != nil {
+		p.logger.Error("failed to save uploaded template", "templateId", parsedUpload.metadata.ID, "error", err)
 		jsonError(rw, "saving template: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	jsonResponse(rw, meta, http.StatusCreated)
+	p.logger.Info("template uploaded successfully", "templateId", parsedUpload.metadata.ID, "hasImage", parsedUpload.imageReader != nil)
+	jsonResponse(rw, parsedUpload.metadata, http.StatusCreated)
 }
 
 // handleDeleteTemplate removes a template from storage.
@@ -263,6 +272,110 @@ func jsonError(rw http.ResponseWriter, message string, status int) {
 
 var nonAlphanumRe = regexp.MustCompile(`[^a-z0-9]+`)
 
+type parsedUploadTemplate struct {
+	templateJSON  []byte
+	metadata      TemplateMetadata
+	variablesJSON []byte
+	imageReader   io.Reader
+	imageMime     string
+}
+
+type jsonUploadTemplateRequest struct {
+	TemplateJSON  json.RawMessage  `json:"templateJson"`
+	Metadata      TemplateMetadata `json:"metadata"`
+	VariablesJSON json.RawMessage  `json:"variablesJson"`
+	ImageBase64   string           `json:"imageBase64"`
+	ImageMimeType string           `json:"imageMimeType"`
+}
+
+func parseUploadTemplateRequest(req *http.Request, contentType string) (*parsedUploadTemplate, error) {
+	if strings.Contains(contentType, "application/json") {
+		return parseJSONUploadTemplateRequest(req)
+	}
+
+	return parseMultipartUploadTemplateRequest(req)
+}
+
+func parseMultipartUploadTemplateRequest(req *http.Request) (*parsedUploadTemplate, error) {
+	if err := req.ParseMultipartForm(20 << 20); err != nil {
+		return nil, fmt.Errorf("parsing multipart form: %w", err)
+	}
+
+	templateJSON := []byte(req.FormValue("templateJson"))
+	metadataJSON := []byte(req.FormValue("metadata"))
+	variablesJSON := []byte(req.FormValue("variablesJson"))
+
+	if len(templateJSON) == 0 {
+		return nil, fmt.Errorf("templateJson is required")
+	}
+	if len(metadataJSON) == 0 {
+		return nil, fmt.Errorf("metadata is required")
+	}
+
+	var meta TemplateMetadata
+	if err := json.Unmarshal(metadataJSON, &meta); err != nil {
+		return nil, fmt.Errorf("invalid metadata JSON: %w", err)
+	}
+
+	var imageReader io.Reader
+	var imageMime string
+	imageFile, imageHeader, imgErr := req.FormFile("image")
+	if imgErr == nil {
+		defer imageFile.Close()
+
+		imageBytes, err := io.ReadAll(imageFile)
+		if err != nil {
+			return nil, fmt.Errorf("reading image: %w", err)
+		}
+
+		imageReader = bytes.NewReader(imageBytes)
+		imageMime = imageHeader.Header.Get("Content-Type")
+		if imageMime == "" {
+			imageMime = "image/png"
+		}
+	}
+
+	return &parsedUploadTemplate{
+		templateJSON:  templateJSON,
+		metadata:      meta,
+		variablesJSON: variablesJSON,
+		imageReader:   imageReader,
+		imageMime:     imageMime,
+	}, nil
+}
+
+func parseJSONUploadTemplateRequest(req *http.Request) (*parsedUploadTemplate, error) {
+	var payload jsonUploadTemplateRequest
+	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("invalid JSON body: %w", err)
+	}
+
+	if len(payload.TemplateJSON) == 0 {
+		return nil, fmt.Errorf("templateJson is required")
+	}
+
+	var imageReader io.Reader
+	imageMime := payload.ImageMimeType
+	if payload.ImageBase64 != "" {
+		imageBytes, err := base64.StdEncoding.DecodeString(payload.ImageBase64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid imageBase64: %w", err)
+		}
+		imageReader = bytes.NewReader(imageBytes)
+		if imageMime == "" {
+			imageMime = "image/png"
+		}
+	}
+
+	return &parsedUploadTemplate{
+		templateJSON:  payload.TemplateJSON,
+		metadata:      payload.Metadata,
+		variablesJSON: payload.VariablesJSON,
+		imageReader:   imageReader,
+		imageMime:     imageMime,
+	}, nil
+}
+
 // slugify converts a title into a URL-safe lowercase slug.
 func slugify(title string) string {
 	s := strings.ToLower(title)
@@ -273,4 +386,3 @@ func slugify(title string) string {
 	}
 	return s
 }
-
