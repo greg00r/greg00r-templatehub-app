@@ -76,5 +76,6 @@ type PluginSecureSettings struct {
 }
 
 const (
-	DefaultLocalPath = "/var/lib/grafana/plugins-data/gregoor-private-marketplace-app/templates"
+	DefaultLocalPath = "/var/lib/grafana/plugins-data/greg00r-templatehub-app/templates"
+	LegacyLocalPath  = "/var/lib/grafana/plugins-data/gregoor-private-marketplace-app/templates"
 )

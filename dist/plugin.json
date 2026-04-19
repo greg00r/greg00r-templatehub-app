@@ -1,14 +1,14 @@
 {
   "type": "app",
-  "name": "Private Dashboard Marketplace",
-  "id": "gregoor-private-marketplace-app",
+  "name": "Template Hub",
+  "id": "greg00r-templatehub-app",
   "info": {
-    "description": "A private Grafana dashboard marketplace for publishing, discovering, and installing reusable dashboards within your organization.",
+    "description": "A Grafana Template Hub for publishing, reviewing, and importing reusable dashboards within your organization.",
     "author": {
       "name": "Greg00r",
       "url": ""
     },
-    "keywords": ["marketplace", "dashboard", "templates", "gallery"],
+    "keywords": ["template-hub", "dashboard", "templates", "gallery"],
     "logos": {
       "small": "img/logo.svg",
       "large": "img/logo.svg"
@@ -21,38 +21,38 @@
   "includes": [
     {
       "type": "page",
-      "name": "Dashboard Marketplace",
-      "path": "/a/gregoor-private-marketplace-app",
+      "name": "Template Hub",
+      "path": "/a/greg00r-templatehub-app",
       "role": "Viewer",
-      "action": "gregoor-private-marketplace-app.templates:read",
+      "action": "greg00r-templatehub-app.templates:read",
       "addToNav": true,
       "defaultNav": true
     },
     {
       "type": "page",
       "name": "Upload Template",
-      "path": "/a/gregoor-private-marketplace-app/upload",
+      "path": "/a/greg00r-templatehub-app/upload",
       "role": "Viewer",
-      "action": "gregoor-private-marketplace-app.templates:publish",
+      "action": "greg00r-templatehub-app.templates:publish",
       "addToNav": false
     },
     {
       "type": "page",
       "name": "Review Templates",
-      "path": "/a/gregoor-private-marketplace-app/review",
+      "path": "/a/greg00r-templatehub-app/review",
       "role": "Viewer",
-      "action": "gregoor-private-marketplace-app.templates:review",
+      "action": "greg00r-templatehub-app.templates:review",
       "addToNav": false
     }
   ],
   "roles": [
     {
       "role": {
-        "name": "Marketplace Viewer",
-        "description": "Browse approved dashboard templates in the marketplace.",
+        "name": "Template Hub Viewer",
+        "description": "Browse approved dashboard templates in Template Hub.",
         "permissions": [
           {
-            "action": "gregoor-private-marketplace-app.templates:read"
+            "action": "greg00r-templatehub-app.templates:read"
           }
         ]
       },
@@ -60,11 +60,11 @@
     },
     {
       "role": {
-        "name": "Marketplace Publisher",
-        "description": "Submit dashboard templates for admin review.",
+        "name": "Template Hub Publisher",
+        "description": "Submit dashboard templates to Template Hub for admin review.",
         "permissions": [
           {
-            "action": "gregoor-private-marketplace-app.templates:publish"
+            "action": "greg00r-templatehub-app.templates:publish"
           }
         ]
       },
@@ -72,20 +72,20 @@
     },
     {
       "role": {
-        "name": "Marketplace Reviewer",
-        "description": "Review, approve, delete, and initialize marketplace templates.",
+        "name": "Template Hub Reviewer",
+        "description": "Review, approve, delete, and initialize Template Hub templates.",
         "permissions": [
           {
-            "action": "gregoor-private-marketplace-app.templates:review"
+            "action": "greg00r-templatehub-app.templates:review"
           },
           {
-            "action": "gregoor-private-marketplace-app.templates:approve"
+            "action": "greg00r-templatehub-app.templates:approve"
           },
           {
-            "action": "gregoor-private-marketplace-app.templates:delete"
+            "action": "greg00r-templatehub-app.templates:delete"
           },
           {
-            "action": "gregoor-private-marketplace-app.templates:initialize"
+            "action": "greg00r-templatehub-app.templates:initialize"
           }
         ]
       },
@@ -102,7 +102,7 @@
   },
   "backend": true,
   "autoEnabled": true,
-  "executable": "gpx_private_marketplace",
+  "executable": "gpx_templatehub",
   "dependencies": {
     "grafanaDependency": ">=10.4.0",
     "grafanaVersion": "13.x",

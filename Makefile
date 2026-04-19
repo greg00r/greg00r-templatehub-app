@@ -1,8 +1,8 @@
 # Plugin ID and binary name (must match executable in plugin.json)
-PLUGIN_ID     := gregoor-private-marketplace-app
-BINARY_NAME   := gpx_private_marketplace
+PLUGIN_ID     := greg00r-templatehub-app
+BINARY_NAME   := gpx_templatehub
 OUTPUT_DIR    := dist
-IMAGE_NAME    ?= gregoor/private-marketplace-plugin
+IMAGE_NAME    ?= greg00r/templatehub-plugin
 IMAGE_TAG     ?= 1.0.0
 
 .PHONY: build build-backend build-backend-darwin build-frontend image package lint \

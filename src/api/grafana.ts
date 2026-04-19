@@ -149,7 +149,7 @@ export async function importDashboard(
     dashboard: clonedDashboard,
     folderUid: formValues.folderUid || undefined,
     overwrite: false,
-    message: 'Imported from Private Marketplace',
+    message: 'Imported from Template Hub',
   });
 
   return { uid: response.uid, url: response.url };
@@ -442,7 +442,7 @@ async function getCreatedDashboardUrl(dashboardUid: string): Promise<string | nu
 function buildDashboardAnnotations(folderUid: string): Record<string, string> {
   return {
     ...(folderUid ? { 'grafana.app/folder': folderUid } : {}),
-    'grafana.app/message': 'Imported from Private Marketplace',
+    'grafana.app/message': 'Imported from Template Hub',
   };
 }
 
@@ -456,7 +456,7 @@ function buildDashboardLabels(tags: string[]): Record<string, string> {
       continue;
     }
 
-    const baseKey = `private-marketplace.grafana.app/tag-${slugifyForLabel(normalizedTag) || 'tag'}`;
+    const baseKey = `template-hub.greg00r.app/tag-${slugifyForLabel(normalizedTag) || 'tag'}`;
     let nextKey = baseKey;
     let suffix = 2;
     while (seenKeys.has(nextKey)) {

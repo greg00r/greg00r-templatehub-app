@@ -41,7 +41,7 @@ export function Upload() {
         </Button>
 
         <Alert title="Publishing is restricted" severity="warning">
-          You need the marketplace publish permission or the Editor/Admin basic role to publish dashboard templates.
+          You need the Template Hub publish permission or the Editor/Admin basic role to publish dashboard templates.
         </Alert>
       </div>
     );
@@ -63,7 +63,7 @@ export function Upload() {
         <Stack direction="column" gap={0.5}>
           <Text element="h1" variant="h2">Upload Dashboard Template</Text>
           <Text color="secondary">
-            Submit a reusable dashboard to the organization marketplace. Admins will review it before it goes live.
+            Submit a reusable dashboard to Template Hub. Admins will review it before it goes live.
           </Text>
         </Stack>
       </div>

@@ -4,7 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-PLUGIN_ID="gregoor-private-marketplace-app"
+PLUGIN_ID="greg00r-templatehub-app"
+BINARY_NAME="gpx_templatehub"
 PACKAGE_JSON="$REPO_ROOT/package.json"
 DIST_DIR="$REPO_ROOT/dist"
 ARTIFACTS_DIR="$REPO_ROOT/.artifacts"
@@ -49,7 +50,7 @@ log "Building linux/amd64 backend binary"
   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -buildvcs=false \
     -ldflags="-s -w" \
-    -o "$PACKAGE_ROOT/gpx_private_marketplace_linux_amd64" \
+    -o "$PACKAGE_ROOT/${BINARY_NAME}_linux_amd64" \
     ./pkg
 )
 
@@ -59,11 +60,11 @@ log "Building linux/arm64 backend binary"
   CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
     -buildvcs=false \
     -ldflags="-s -w" \
-    -o "$PACKAGE_ROOT/gpx_private_marketplace_linux_arm64" \
+    -o "$PACKAGE_ROOT/${BINARY_NAME}_linux_arm64" \
     ./pkg
 )
 
-chmod +x "$PACKAGE_ROOT/gpx_private_marketplace_linux_amd64" "$PACKAGE_ROOT/gpx_private_marketplace_linux_arm64"
+chmod +x "$PACKAGE_ROOT/${BINARY_NAME}_linux_amd64" "$PACKAGE_ROOT/${BINARY_NAME}_linux_arm64"
 
 log "Creating release archive $ARCHIVE_NAME"
 (

@@ -11,7 +11,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 
-	"github.com/greg00r/grafana-private-marketplace/pkg/plugin/storage"
+	"github.com/greg00r/greg00r-templatehub-app/pkg/plugin/storage"
 )
 
 func TestNormalizeResourcePath(t *testing.T) {
@@ -22,7 +22,7 @@ func TestNormalizeResourcePath(t *testing.T) {
 	}{
 		{
 			name: "full grafana resource path",
-			path: "/api/plugins/gregoor-private-marketplace-app/resources/templates/demo",
+			path: "/api/plugins/greg00r-templatehub-app/resources/templates/demo",
 			want: "templates/demo",
 		},
 		{

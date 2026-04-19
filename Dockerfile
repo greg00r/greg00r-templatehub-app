@@ -43,7 +43,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -buildvcs=false \
     -ldflags="-s -w" \
-    -o dist/gpx_private_marketplace_linux_amd64 \
+    -o dist/gpx_templatehub_linux_amd64 \
     ./pkg
 
 RUN --mount=type=cache,target=/go/pkg/mod \
@@ -51,7 +51,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
     -buildvcs=false \
     -ldflags="-s -w" \
-    -o dist/gpx_private_marketplace_linux_arm64 \
+    -o dist/gpx_templatehub_linux_arm64 \
     ./pkg
 
 # Stage 3: Plugin artifact image
@@ -60,16 +60,16 @@ FROM busybox:stable
 
 ARG PLUGIN_BUILD_VERSION
 
-LABEL org.opencontainers.image.title="Private Marketplace Plugin"
-LABEL org.opencontainers.image.description="Grafana App Plugin init container artifact"
+LABEL org.opencontainers.image.title="Template Hub Plugin"
+LABEL org.opencontainers.image.description="Grafana Template Hub app plugin artifact"
 LABEL org.opencontainers.image.version=$PLUGIN_BUILD_VERSION
 
-COPY --from=frontend-builder /plugin/dist/ /plugin/gregoor-private-marketplace-app/
-COPY --from=backend-builder /plugin/dist/ /plugin/gregoor-private-marketplace-app/
+COPY --from=frontend-builder /plugin/dist/ /plugin/greg00r-templatehub-app/
+COPY --from=backend-builder /plugin/dist/ /plugin/greg00r-templatehub-app/
 COPY templates/ /seed-templates/
 
-RUN chmod +x /plugin/gregoor-private-marketplace-app/gpx_private_marketplace_linux_amd64 \
- && chmod +x /plugin/gregoor-private-marketplace-app/gpx_private_marketplace_linux_arm64
+RUN chmod +x /plugin/greg00r-templatehub-app/gpx_templatehub_linux_amd64 \
+ && chmod +x /plugin/greg00r-templatehub-app/gpx_templatehub_linux_arm64
 
 # Default command: copy plugin files to the plugins volume mount
 CMD ["sh", "-c", "cp -r /plugin/. /var/lib/grafana/plugins/ && echo 'Plugin installed.'"]

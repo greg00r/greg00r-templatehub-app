@@ -1,6 +1,6 @@
-# Private Marketplace Templates
+# Template Hub
 
-Repozytorium zawiera kod pluginu Grafany `gregoor-private-marketplace-app`.
+Repozytorium zawiera kod pluginu Grafany `greg00r-templatehub-app` o nazwie `Template Hub`.
 
 To jest app plugin z:
 - frontendem React/TypeScript,
@@ -12,7 +12,7 @@ Repo nie trzyma chartu Helm ani lokalnego deployu Minikube. To siedzi w sasiedni
 
 ## Co robi plugin
 
-Plugin rozwiazuje problem prywatnego marketplace'u dashboard templates wewnatrz instancji Grafany:
+Plugin rozwiazuje problem wewnetrznego huba template'ow dashboardow wewnatrz instancji Grafany:
 
 - pokazuje galerie template'ow,
 - pozwala wejsc w widok szczegolowy template'u,
@@ -27,7 +27,7 @@ Sa tu 3 warstwy:
 
 1. Frontend pluginu
 - renderuje galerie, detail, import i upload wizard,
-- pobiera template'y z `/api/plugins/gregoor-private-marketplace-app/resources/*`,
+- pobiera template'y z `/api/plugins/greg00r-templatehub-app/resources/*`,
 - przy imporcie wywoluje natywne API Grafany `POST /api/dashboards/db`.
 
 2. Backend pluginu
@@ -45,13 +45,17 @@ Sa tu 3 warstwy:
 Domyslna lokalna sciezka pluginu:
 
 ```text
-/var/lib/grafana/plugins-data/gregoor-private-marketplace-app/templates
+/var/lib/grafana/plugins-data/greg00r-templatehub-app/templates
 ```
 
 To jest ustawione w backendzie pluginu jako:
 
 - [models.go](C:/Users/gr3g0/Documents/repo/github/private-marketplace-templates/pkg/plugin/models.go)
-- `DefaultLocalPath = "/var/lib/grafana/plugins-data/gregoor-private-marketplace-app/templates"`
+- `DefaultLocalPath = "/var/lib/grafana/plugins-data/greg00r-templatehub-app/templates"`
+
+Plugin ma tez kompatybilnosc wstecz:
+- jesli znajdzie stare dane pod `/var/lib/grafana/plugins-data/gregoor-private-marketplace-app/templates`,
+- sprobuje je automatycznie przeniesc do nowej sciezki `Template Hub`.
 
 Kazdy template to osobny katalog:
 
@@ -93,7 +97,7 @@ Upload to polaczenie frontendu i backendu pluginu:
 2. frontend wysyla payload do:
 
 ```text
-/api/plugins/gregoor-private-marketplace-app/resources/templates
+/api/plugins/greg00r-templatehub-app/resources/templates
 ```
 
 3. backend pluginu waliduje dane,
@@ -149,7 +153,7 @@ W `grafana-local` storage pluginu jest podmontowany z PVC:
 - volume -> mount:
 
 ```text
-/var/lib/grafana/plugins-data/gregoor-private-marketplace-app/templates
+/var/lib/grafana/plugins-data/greg00r-templatehub-app/templates
 ```
 
 Dzieki temu template'y przetrwaja restart poda.
@@ -193,10 +197,10 @@ make image
 `npm run package` albo `make package` buduje gotowa paczke release do katalogu:
 
 ```text
-.artifacts/releases/gregoor-private-marketplace-app-<version>.zip
+.artifacts/releases/greg00r-templatehub-app-<version>.zip
 ```
 
-To jest zip z katalogiem `gregoor-private-marketplace-app/`, ktory mozna wypakowac bezposrednio do:
+To jest zip z katalogiem `greg00r-templatehub-app/`, ktory mozna wypakowac bezposrednio do:
 
 ```text
 /var/lib/grafana/plugins
@@ -223,16 +227,16 @@ Po pushu taga workflow:
 Jesli release asset jest juz zbudowany na GitHubie, wdrozenie do innej Grafany moze wygladac tak:
 
 ```bash
-curl -L -o private-marketplace.zip \
-  https://github.com/greg00r/private-marketplace-templates/releases/download/v1.0.4/gregoor-private-marketplace-app-1.0.4.zip
+curl -L -o template-hub.zip \
+  https://github.com/greg00r/greg00r-templatehub-app/releases/download/v1.0.4/greg00r-templatehub-app-1.0.4.zip
 
-unzip private-marketplace.zip -d /var/lib/grafana/plugins
+unzip template-hub.zip -d /var/lib/grafana/plugins
 ```
 
 Po rozpakowaniu powinienes miec katalog:
 
 ```text
-/var/lib/grafana/plugins/gregoor-private-marketplace-app
+/var/lib/grafana/plugins/greg00r-templatehub-app
 ```
 
 Do uruchomienia pluginu potrzebujesz jeszcze:
@@ -240,13 +244,13 @@ Do uruchomienia pluginu potrzebujesz jeszcze:
 - allowlisty dla unsigned plugin:
 
 ```text
-GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=gregoor-private-marketplace-app
+GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=greg00r-templatehub-app
 ```
 
 - writable storage dla template'ow:
 
 ```text
-/var/lib/grafana/plugins-data/gregoor-private-marketplace-app/templates
+/var/lib/grafana/plugins-data/greg00r-templatehub-app/templates
 ```
 
 Po skopiowaniu pluginu zrestartuj Pode/Deploy Grafany.

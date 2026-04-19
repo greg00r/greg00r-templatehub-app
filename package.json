@@ -1,7 +1,7 @@
 {
-  "name": "gregoor-private-marketplace-app",
+  "name": "greg00r-templatehub-app",
   "version": "1.0.4",
-  "description": "Private Grafana dashboard marketplace for your organization",
+  "description": "Template Hub for publishing and importing reusable Grafana dashboards",
   "scripts": {
     "build": "webpack -c ./.config/webpack.config.ts --env production",
     "dev": "webpack -c ./.config/webpack.config.ts --watch --env development",

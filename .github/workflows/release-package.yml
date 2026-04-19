@@ -59,7 +59,7 @@ jobs:
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gregoor-private-marketplace-app-${{ env.PACKAGE_VERSION }}
+          name: greg00r-templatehub-app-${{ env.PACKAGE_VERSION }}
           path: .artifacts/releases/*
 
       - name: Publish GitHub release assets

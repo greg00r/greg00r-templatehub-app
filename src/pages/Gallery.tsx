@@ -98,7 +98,7 @@ export function Gallery() {
         return;
       }
 
-      const confirmed = window.confirm(`Delete template "${template.metadata.title}" from the approved marketplace?`);
+      const confirmed = window.confirm(`Delete template "${template.metadata.title}" from Template Hub?`);
       if (!confirmed) {
         return;
       }
@@ -109,7 +109,7 @@ export function Gallery() {
         setTemplates((current) => current.filter((item) => item.metadata.id !== template.metadata.id));
         appEvents.publish({
           type: AppEvents.alertSuccess.name,
-          payload: [`Template "${template.metadata.title}" was removed from the marketplace.`],
+          payload: [`Template "${template.metadata.title}" was removed from Template Hub.`],
         });
       } catch (deleteError) {
         const message = deleteError instanceof Error ? deleteError.message : 'Failed to delete template';
@@ -128,13 +128,13 @@ export function Gallery() {
     <div className={styles.page}>
       <div className={styles.hero}>
         <div>
-          <h1 className={styles.title}>Dashboard Marketplace</h1>
+          <h1 className={styles.title}>Template Hub</h1>
           <p className={styles.subtitle}>
             Browse approved dashboard templates and import them into this Grafana instance.
           </p>
           {!canPublishTemplates && (
             <p className={styles.subtitle}>
-              Template publishing is available to users with the marketplace publish permission or the Editor/Admin basic role.
+              Template publishing is available to users with the Template Hub publish permission or the Editor/Admin basic role.
             </p>
           )}
           {canPublishTemplates && (

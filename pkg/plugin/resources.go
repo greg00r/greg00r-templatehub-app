@@ -15,7 +15,7 @@ import (
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend"
 
-	"github.com/greg00r/grafana-private-marketplace/pkg/plugin/storage"
+	"github.com/greg00r/greg00r-templatehub-app/pkg/plugin/storage"
 )
 
 // Route patterns for resource dispatching.
@@ -39,7 +39,7 @@ var (
 )
 
 const (
-	pluginID            = "gregoor-private-marketplace-app"
+	pluginID            = "greg00r-templatehub-app"
 	maxUploadBodyBytes  = 10 << 20
 	maxImageBytes       = 2 << 20
 	maxTitleLength      = 120

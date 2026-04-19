@@ -3,7 +3,7 @@ import type { MarketplaceAccess } from '../types';
 
 export type MarketplaceOrgRole = 'Admin' | 'Editor' | 'Viewer';
 
-const PLUGIN_ID = 'gregoor-private-marketplace-app';
+const PLUGIN_ID = 'greg00r-templatehub-app';
 
 export const MARKETPLACE_PERMISSION_READ = `${PLUGIN_ID}.templates:read`;
 export const MARKETPLACE_PERMISSION_PUBLISH = `${PLUGIN_ID}.templates:publish`;

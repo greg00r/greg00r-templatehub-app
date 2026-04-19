@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -15,7 +17,7 @@ import (
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 
 	"github.com/grafana/authlib/authz"
-	"github.com/greg00r/grafana-private-marketplace/pkg/plugin/storage"
+	"github.com/greg00r/greg00r-templatehub-app/pkg/plugin/storage"
 )
 
 // Ensure Plugin implements the required interfaces at compile time.
@@ -38,7 +40,7 @@ type Plugin struct {
 
 // NewPlugin is the factory function called by app.Manage on startup.
 func NewPlugin(_ context.Context, settings backend.AppInstanceSettings) (instancemgmt.Instance, error) {
-	logger := log.DefaultLogger.With("plugin", "gregoor-private-marketplace-app")
+	logger := log.DefaultLogger.With("plugin", "greg00r-templatehub-app")
 
 	pluginSettings, secureSettings, err := parseSettings(settings)
 	if err != nil {
@@ -65,10 +67,7 @@ func NewPlugin(_ context.Context, settings backend.AppInstanceSettings) (instanc
 		logger.Info("Using external storage", "url", pluginSettings.ExternalURL)
 
 	default: // "local" or empty
-		localPath := pluginSettings.LocalPath
-		if localPath == "" {
-			localPath = DefaultLocalPath
-		}
+		localPath := resolveLocalStoragePath(pluginSettings.LocalPath, logger)
 		store, err = storage.NewLocalStorage(localPath)
 		if err != nil {
 			return nil, fmt.Errorf("initializing local storage: %w", err)
@@ -81,6 +80,35 @@ func NewPlugin(_ context.Context, settings backend.AppInstanceSettings) (instanc
 		logger:     logger,
 		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}, nil
+}
+
+func resolveLocalStoragePath(configuredPath string, logger log.Logger) string {
+	if configuredPath != "" {
+		return configuredPath
+	}
+
+	if _, err := os.Stat(DefaultLocalPath); err == nil {
+		return DefaultLocalPath
+	}
+
+	if _, err := os.Stat(LegacyLocalPath); err == nil {
+		if migrateErr := os.MkdirAll(filepath.Dir(DefaultLocalPath), 0755); migrateErr != nil {
+			logger.Warn("Could not prepare Template Hub storage directory, using legacy path", "error", migrateErr)
+			return LegacyLocalPath
+		}
+
+		if migrateErr := os.Rename(LegacyLocalPath, DefaultLocalPath); migrateErr != nil {
+			logger.Warn("Could not migrate legacy marketplace storage to Template Hub path, using legacy path", "error", migrateErr)
+			return LegacyLocalPath
+		}
+
+		logger.Info("Migrated legacy marketplace storage to Template Hub path", "from", LegacyLocalPath, "to", DefaultLocalPath)
+		return DefaultLocalPath
+	} else if !os.IsNotExist(err) {
+		logger.Warn("Could not inspect legacy marketplace storage path", "error", err)
+	}
+
+	return DefaultLocalPath
 }
 
 // CallResource handles all HTTP resource calls routed through /api/plugins/<id>/resources/*.

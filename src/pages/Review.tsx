@@ -56,7 +56,7 @@ export function Review() {
       setTemplates((current) => current.filter((item) => item.metadata.id !== template.metadata.id));
       appEvents.publish({
         type: AppEvents.alertSuccess.name,
-        payload: [`Template "${template.metadata.title}" is now live in the marketplace.`],
+        payload: [`Template "${template.metadata.title}" is now live in Template Hub.`],
       });
     } catch (approveError) {
       const message = approveError instanceof Error ? approveError.message : 'Failed to approve template';
@@ -112,7 +112,7 @@ export function Review() {
           Back to gallery
         </Button>
         <Alert title="Review access required" severity="warning">
-          You need the marketplace review permission or the Admin basic role to moderate pending dashboard templates.
+          You need the Template Hub review permission or the Admin basic role to moderate pending dashboard templates.
         </Alert>
       </div>
     );
@@ -126,7 +126,7 @@ export function Review() {
             Review Templates
           </Text>
           <Text color="secondary">
-            Editor and Admin uploads land in the waiting room first. Approving a submission moves it into the live marketplace.
+            Editor and Admin uploads land in the waiting room first. Approving a submission moves it into live Template Hub.
           </Text>
         </div>
 

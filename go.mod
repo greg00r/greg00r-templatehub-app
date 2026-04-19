@@ -1,4 +1,4 @@
-module github.com/greg00r/grafana-private-marketplace
+module github.com/greg00r/greg00r-templatehub-app
 
 go 1.24.0
 

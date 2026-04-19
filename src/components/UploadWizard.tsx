@@ -446,7 +446,7 @@ export function UploadWizard({ onSuccess }: Props) {
 
             <Field
               label="Folder"
-              description="Optional category or source folder shown on the marketplace card."
+              description="Optional category or source folder shown on the Template Hub card."
             >
               <Input
                 value={templateFolder}

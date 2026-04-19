@@ -1,7 +1,7 @@
 import { getBackendSrv } from '@grafana/runtime';
 import type { GrafanaDashboard, MarketplaceAccess, Template, TemplateMetadata, TemplateStatus, TemplateVariables } from '../types';
 
-const PLUGIN_ID = 'gregoor-private-marketplace-app';
+const PLUGIN_ID = 'greg00r-templatehub-app';
 const BASE_URL = `/api/plugins/${PLUGIN_ID}/resources`;
 
 function withStatus(status: TemplateStatus = 'approved'): string {

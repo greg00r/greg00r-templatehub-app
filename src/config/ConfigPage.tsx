@@ -14,7 +14,7 @@ import { css } from '@emotion/css';
 import { getBackendSrv, getAppEvents } from '@grafana/runtime';
 import type { AppPluginSettings, StorageBackend, ExternalAuthType } from '../types';
 
-const PLUGIN_ID = 'gregoor-private-marketplace-app';
+const PLUGIN_ID = 'greg00r-templatehub-app';
 
 interface Props {
   plugin: {
@@ -44,7 +44,7 @@ export function ConfigPage({ plugin }: Props) {
     jsonData.storageBackend ?? 'local'
   );
   const [localPath, setLocalPath] = useState(
-    jsonData.localPath ?? '/var/lib/grafana/plugins-data/gregoor-private-marketplace-app/templates'
+    jsonData.localPath ?? '/var/lib/grafana/plugins-data/greg00r-templatehub-app/templates'
   );
   const [externalUrl, setExternalUrl] = useState(jsonData.externalUrl ?? '');
   const [authType, setAuthType] = useState<ExternalAuthType>(jsonData.externalAuthType ?? 'none');
@@ -191,7 +191,7 @@ export function ConfigPage({ plugin }: Props) {
             <Input
               value={localPath}
               onChange={(e) => setLocalPath(e.currentTarget.value)}
-              placeholder="/var/lib/grafana/plugins-data/gregoor-private-marketplace-app/templates"
+              placeholder="/var/lib/grafana/plugins-data/greg00r-templatehub-app/templates"
             />
           </Field>
 

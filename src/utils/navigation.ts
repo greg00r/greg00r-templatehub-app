@@ -1,4 +1,4 @@
-export const PLUGIN_ROOT = '/a/gregoor-private-marketplace-app';
+export const PLUGIN_ROOT = '/a/greg00r-templatehub-app';
 
 export type PluginRoute =
   | { type: 'gallery' }
