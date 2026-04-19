@@ -22,7 +22,7 @@ export function Gallery() {
   const [busyTemplateId, setBusyTemplateId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTag, setSelectedTag] = useState('');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedDatasourceType, setSelectedDatasourceType] = useState('');
 
   const fetchTemplates = useCallback(async () => {
@@ -77,7 +77,7 @@ export function Gallery() {
         return false;
       }
 
-      if (selectedTag && !template.metadata.tags?.includes(selectedTag)) {
+      if (selectedTags.length > 0 && !selectedTags.every((tag) => template.metadata.tags?.includes(tag))) {
         return false;
       }
 
@@ -90,7 +90,13 @@ export function Gallery() {
 
       return true;
     });
-  }, [searchQuery, selectedDatasourceType, selectedTag, templates]);
+  }, [searchQuery, selectedDatasourceType, selectedTags, templates]);
+
+  const toggleTagFilter = useCallback((tag: string) => {
+    setSelectedTags((current) =>
+      current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag].sort()
+    );
+  }, []);
 
   const handleDeleteTemplate = useCallback(
     async (template: Template) => {
@@ -173,19 +179,6 @@ export function Gallery() {
 
         <select
           className={styles.select}
-          value={selectedTag}
-          onChange={(event) => setSelectedTag(event.currentTarget.value)}
-        >
-          <option value="">All tags</option>
-          {allTags.map((tag) => (
-            <option key={tag} value={tag}>
-              {tag}
-            </option>
-          ))}
-        </select>
-
-        <select
-          className={styles.select}
           value={selectedDatasourceType}
           onChange={(event) => setSelectedDatasourceType(event.currentTarget.value)}
         >
@@ -197,12 +190,12 @@ export function Gallery() {
           ))}
         </select>
 
-        {(searchQuery || selectedTag || selectedDatasourceType) && (
+        {(searchQuery || selectedTags.length > 0 || selectedDatasourceType) && (
           <button
             className={styles.secondaryButton}
             onClick={() => {
               setSearchQuery('');
-              setSelectedTag('');
+              setSelectedTags([]);
               setSelectedDatasourceType('');
             }}
           >
@@ -210,6 +203,34 @@ export function Gallery() {
           </button>
         )}
       </div>
+
+      {allTags.length > 0 && (
+        <div className={styles.tagFilterPanel}>
+          <div className={styles.tagFilterHeader}>
+            <strong>Tags</strong>
+            <span className={styles.tagFilterHint}>
+              Match all selected tags. Choose as many as you want.
+            </span>
+          </div>
+
+          <div className={styles.tagChipList}>
+            {allTags.map((tag) => {
+              const isSelected = selectedTags.includes(tag);
+
+              return (
+                <button
+                  key={tag}
+                  type="button"
+                  className={`${styles.tagChip} ${isSelected ? styles.tagChipSelected : ''}`}
+                  onClick={() => toggleTagFilter(tag)}
+                >
+                  {tag}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {loading && <div className={styles.infoBox}>Loading templates...</div>}
 
@@ -251,7 +272,7 @@ export function Gallery() {
             className={styles.secondaryButton}
             onClick={() => {
               setSearchQuery('');
-              setSelectedTag('');
+              setSelectedTags([]);
               setSelectedDatasourceType('');
             }}
           >
@@ -318,7 +339,7 @@ function getStyles(theme: GrafanaTheme2) {
     }),
     filters: css({
       display: 'grid',
-      gridTemplateColumns: 'minmax(260px, 1fr) 220px 220px auto',
+      gridTemplateColumns: 'minmax(260px, 1fr) 220px auto',
       gap: theme.spacing(1.5),
       [theme.breakpoints.down('lg')]: {
         gridTemplateColumns: '1fr',
@@ -361,6 +382,50 @@ function getStyles(theme: GrafanaTheme2) {
       color: theme.colors.text.primary,
       fontWeight: theme.typography.fontWeightMedium,
       cursor: 'pointer',
+    }),
+    tagFilterPanel: css({
+      display: 'flex',
+      flexDirection: 'column',
+      gap: theme.spacing(1),
+      padding: theme.spacing(1.5),
+      borderRadius: theme.shape.radius.default,
+      border: `1px solid ${theme.colors.border.weak}`,
+      background: theme.colors.background.secondary,
+    }),
+    tagFilterHeader: css({
+      display: 'flex',
+      alignItems: 'baseline',
+      justifyContent: 'space-between',
+      gap: theme.spacing(1),
+      flexWrap: 'wrap',
+      color: theme.colors.text.primary,
+    }),
+    tagFilterHint: css({
+      color: theme.colors.text.secondary,
+      fontSize: theme.typography.bodySmall.fontSize,
+    }),
+    tagChipList: css({
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: theme.spacing(1),
+    }),
+    tagChip: css({
+      minHeight: '32px',
+      padding: `0 ${theme.spacing(1.5)}`,
+      borderRadius: '999px',
+      border: `1px solid ${theme.colors.border.medium}`,
+      background: theme.colors.background.primary,
+      color: theme.colors.text.primary,
+      cursor: 'pointer',
+      transition: 'background-color 120ms ease, box-shadow 120ms ease, border-color 120ms ease',
+      ':hover': {
+        background: theme.colors.action.hover,
+      },
+    }),
+    tagChipSelected: css({
+      borderColor: theme.colors.primary.border,
+      background: theme.colors.background.canvas,
+      boxShadow: `inset 0 0 0 1px ${theme.colors.primary.border}`,
     }),
     infoBox: css({
       display: 'flex',

@@ -484,7 +484,10 @@ export interface DashboardSearchResult {
   id: number;
   uid: string;
   title: string;
+  folderUid?: string;
   folderTitle?: string;
+  folderUrl?: string;
+  folderPath?: string;
 }
 
 export async function searchDashboards(query: string): Promise<DashboardSearchResult[]> {
@@ -493,8 +496,11 @@ export async function searchDashboards(query: string): Promise<DashboardSearchRe
     ? `/api/search?query=${encodeURIComponent(normalizedQuery)}&type=dash-db&limit=20`
     : '/api/search?type=dash-db&limit=20';
 
-  const results = await getBackendSrv().get<Array<Partial<DashboardSearchResult>>>(searchPath);
-  return normalizeDashboardSearchResults(results);
+  const [results, folderPathMap] = await Promise.all([
+    getBackendSrv().get<Array<Partial<DashboardSearchResult>>>(searchPath),
+    getFolderPathMap(),
+  ]);
+  return normalizeDashboardSearchResults(results, folderPathMap);
 }
 
 export async function getDashboardByUid(uid: string): Promise<{ dashboard: GrafanaDashboard }> {
@@ -553,13 +559,16 @@ function normalizeGrafanaFolders(folders: Array<Partial<GrafanaFolder>>): Grafan
 }
 
 function normalizeDashboardSearchResults(
-  results: Array<Partial<DashboardSearchResult>>
+  results: Array<Partial<DashboardSearchResult>>,
+  folderPathMap: Map<string, string>
 ): DashboardSearchResult[] {
   const deduped = new Map<string, DashboardSearchResult>();
 
   for (const result of results) {
     const uid = typeof result.uid === 'string' ? result.uid.trim() : '';
     const title = typeof result.title === 'string' ? result.title.trim() : '';
+    const folderUid = typeof result.folderUid === 'string' ? result.folderUid.trim() || undefined : undefined;
+    const folderTitle = typeof result.folderTitle === 'string' ? result.folderTitle.trim() || undefined : undefined;
 
     if (!uid || !title) {
       continue;
@@ -569,9 +578,118 @@ function normalizeDashboardSearchResults(
       id: typeof result.id === 'number' ? result.id : 0,
       uid,
       title,
-      folderTitle: typeof result.folderTitle === 'string' ? result.folderTitle.trim() || undefined : undefined,
+      folderUid,
+      folderTitle,
+      folderUrl: typeof result.folderUrl === 'string' ? result.folderUrl.trim() || undefined : undefined,
+      folderPath: resolveFolderPath(folderUid, folderTitle, folderPathMap),
     });
   }
 
   return Array.from(deduped.values());
+}
+
+interface FolderSearchResult extends GrafanaFolder {
+  folderUid?: string;
+  folderTitle?: string;
+}
+
+let folderPathCache:
+  | {
+      expiresAt: number;
+      paths: Map<string, string>;
+    }
+  | undefined;
+
+async function getFolderPathMap(): Promise<Map<string, string>> {
+  const now = Date.now();
+  if (folderPathCache && folderPathCache.expiresAt > now) {
+    return folderPathCache.paths;
+  }
+
+  const folderResults = await getBackendSrv()
+    .get<Array<Partial<FolderSearchResult>>>('/api/search?type=dash-folder&limit=1000')
+    .catch(() => [] as Array<Partial<FolderSearchResult>>);
+
+  const paths = buildFolderPathMap(folderResults);
+  folderPathCache = {
+    expiresAt: now + 60_000,
+    paths,
+  };
+
+  return paths;
+}
+
+function buildFolderPathMap(results: Array<Partial<FolderSearchResult>>): Map<string, string> {
+  const folders = new Map<
+    string,
+    {
+      title: string;
+      parentUid?: string;
+    }
+  >();
+
+  for (const result of results) {
+    const uid = typeof result.uid === 'string' ? result.uid.trim() : '';
+    const title = typeof result.title === 'string' ? result.title.trim() : '';
+
+    if (!uid || !title) {
+      continue;
+    }
+
+    folders.set(uid, {
+      title,
+      parentUid: typeof result.folderUid === 'string' ? result.folderUid.trim() || undefined : undefined,
+    });
+  }
+
+  const resolvedPaths = new Map<string, string>();
+
+  const resolvePath = (uid: string, trail = new Set<string>()): string => {
+    const cached = resolvedPaths.get(uid);
+    if (cached) {
+      return cached;
+    }
+
+    const folder = folders.get(uid);
+    if (!folder) {
+      return 'General';
+    }
+
+    if (trail.has(uid)) {
+      return `General > ${folder.title}`;
+    }
+
+    trail.add(uid);
+
+    const path = folder.parentUid
+      ? `${resolvePath(folder.parentUid, trail)} > ${folder.title}`
+      : `General > ${folder.title}`;
+
+    resolvedPaths.set(uid, path);
+    trail.delete(uid);
+    return path;
+  };
+
+  for (const uid of folders.keys()) {
+    resolvePath(uid);
+  }
+
+  return resolvedPaths;
+}
+
+function resolveFolderPath(
+  folderUid: string | undefined,
+  folderTitle: string | undefined,
+  folderPathMap: Map<string, string>
+): string {
+  if (!folderUid) {
+    return 'General';
+  }
+
+  const resolvedPath = folderPathMap.get(folderUid);
+  if (resolvedPath) {
+    return resolvedPath;
+  }
+
+  return folderTitle ? `General > ${folderTitle}` : 'General';
 }

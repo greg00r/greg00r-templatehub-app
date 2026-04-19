@@ -36,7 +36,7 @@ interface Props {
 }
 
 type WizardStep = 0 | 1 | 2 | 3 | 4;
-type DashboardSearchOption = { title: string; value: string; folderTitle?: string };
+type DashboardSearchOption = { title: string; value: string; folderTitle?: string; folderPath?: string };
 
 type EditableTemplateVariable = TemplateVariable & {
   rowId: string;
@@ -165,6 +165,7 @@ export function UploadWizard({ onSuccess }: Props) {
           title: result.title,
           value: result.uid,
           folderTitle: result.folderTitle,
+          folderPath: result.folderPath,
         }))
       );
     } catch {
@@ -204,7 +205,7 @@ export function UploadWizard({ onSuccess }: Props) {
       const serialized = JSON.stringify(dashboard, null, 2);
       handleJsonTextChange(serialized);
       setDashboardRawText(serialized);
-      setTemplateFolder(selectedResult?.folderTitle ?? '');
+      setTemplateFolder(toTemplateFolderValue(selectedResult?.folderPath));
       setTitle((current) => current || dashboard.title || selectedResult?.title || '');
     } catch (error) {
       setJsonError(error instanceof Error ? error.message : 'Failed to load dashboard');
@@ -421,7 +422,7 @@ export function UploadWizard({ onSuccess }: Props) {
                             }`}
                           >
                             <Text>{result.title}</Text>
-                            <Text color="secondary">{result.folderTitle ?? 'General'}</Text>
+                            <Text color="secondary">{result.folderPath ?? result.folderTitle ?? 'General'}</Text>
                           </button>
                         );
                       })}
@@ -433,7 +434,7 @@ export function UploadWizard({ onSuccess }: Props) {
                     <div>
                       <Text color="secondary">
                         {selectedDashboard
-                          ? `Selected dashboard: ${selectedDashboard.title} (${selectedDashboard.folderTitle ?? 'General'})`
+                          ? `Selected dashboard: ${selectedDashboard.title} (${selectedDashboard.folderPath ?? selectedDashboard.folderTitle ?? 'General'})`
                           : 'Select a dashboard from the list before loading its JSON.'}
                       </Text>
                     </div>
@@ -1358,4 +1359,12 @@ function getTagValidationError(tags: string[]): string | null {
 
 function normalizedPublishTagsPreview(tags: string[]): string {
   return tags.length > 0 ? tags.join(', ') : '-';
+}
+
+function toTemplateFolderValue(folderPath?: string): string {
+  if (!folderPath || folderPath === 'General') {
+    return '';
+  }
+
+  return folderPath.replace(/^General\s*>\s*/, '').trim();
 }
