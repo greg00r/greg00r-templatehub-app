@@ -5,6 +5,7 @@
   "scripts": {
     "build": "webpack -c ./.config/webpack.config.ts --env production",
     "dev": "webpack -c ./.config/webpack.config.ts --watch --env development",
+    "package": "bash scripts/package-plugin.sh",
     "test": "jest --passWithNoTests",
     "test:ci": "jest --passWithNoTests --maxWorkers 4",
     "typecheck": "tsc --noEmit",

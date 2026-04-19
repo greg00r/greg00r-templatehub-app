@@ -145,7 +145,7 @@ export default async (env: WebpackEnv): Promise<Configuration> => {
                 .replace(/\%VERSION\%/g, buildVersion);
             },
           },
-          { from: 'img', to: 'img', noErrorOnMissing: true },
+          { context: path.join(baseDir, 'src'), from: 'img', to: 'img', noErrorOnMissing: true },
           { from: 'CHANGELOG.md', to: '.', force: true, noErrorOnMissing: true },
         ],
       }),

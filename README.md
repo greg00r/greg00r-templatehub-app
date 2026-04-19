@@ -182,12 +182,82 @@ Makefile    build/test/image dla samego pluginu
 ```bash
 npm install
 npm run build
+npm run package
 npm run test
 npm run typecheck
 go test ./pkg/...
 make build
 make image
 ```
+
+`npm run package` albo `make package` buduje gotowa paczke release do katalogu:
+
+```text
+.artifacts/releases/gregoor-private-marketplace-app-<version>.zip
+```
+
+To jest zip z katalogiem `gregoor-private-marketplace-app/`, ktory mozna wypakowac bezposrednio do:
+
+```text
+/var/lib/grafana/plugins
+```
+
+W srodku sa:
+- frontend bundle,
+- `plugin.json`,
+- assety pluginu,
+- backend binaries dla `linux/amd64` i `linux/arm64`.
+
+Repo ma tez workflow GitHub Actions:
+
+- plik: `.github/workflows/release-package.yml`
+- trigger release: push taga `v*`, np. `v1.0.4`
+
+Po pushu taga workflow:
+- uruchamia testy,
+- buduje zip,
+- publikuje assety `.zip` i `.sha256` do GitHub Release.
+
+## Instalacja z gotowej paczki GitHub Release
+
+Jesli release asset jest juz zbudowany na GitHubie, wdrozenie do innej Grafany moze wygladac tak:
+
+```bash
+curl -L -o private-marketplace.zip \
+  https://github.com/greg00r/private-marketplace-templates/releases/download/v1.0.4/gregoor-private-marketplace-app-1.0.4.zip
+
+unzip private-marketplace.zip -d /var/lib/grafana/plugins
+```
+
+Po rozpakowaniu powinienes miec katalog:
+
+```text
+/var/lib/grafana/plugins/gregoor-private-marketplace-app
+```
+
+Do uruchomienia pluginu potrzebujesz jeszcze:
+
+- allowlisty dla unsigned plugin:
+
+```text
+GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=gregoor-private-marketplace-app
+```
+
+- writable storage dla template'ow:
+
+```text
+/var/lib/grafana/plugins-data/gregoor-private-marketplace-app/templates
+```
+
+Po skopiowaniu pluginu zrestartuj Pode/Deploy Grafany.
+
+W Kubernetes zwykle wystarczy:
+
+```bash
+kubectl rollout restart deployment/grafana -n monitoring
+```
+
+Jesli uzywasz Enterprise RBAC dla app pluginow, sam deploy jest taki sam. Roznica jest tylko po stronie konfiguracji Grafany Enterprise. Na OSS plugin nadal dziala z fallbackiem do `Viewer / Editor / Admin`.
 
 `make image` buduje obraz artefaktu pluginu. W lokalnym deployu `grafana-local` uzywa unikalnego taga przy kazdym deployu, zeby nie podnosic starego init containera z cache.
 

@@ -41,6 +41,7 @@ COPY pkg/ ./pkg/
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -buildvcs=false \
     -ldflags="-s -w" \
     -o dist/gpx_private_marketplace_linux_amd64 \
     ./pkg
@@ -48,6 +49,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
+    -buildvcs=false \
     -ldflags="-s -w" \
     -o dist/gpx_private_marketplace_linux_arm64 \
     ./pkg

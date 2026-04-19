@@ -5,7 +5,7 @@ OUTPUT_DIR    := dist
 IMAGE_NAME    ?= gregoor/private-marketplace-plugin
 IMAGE_TAG     ?= 1.0.0
 
-.PHONY: build build-backend build-backend-darwin build-frontend image lint \
+.PHONY: build build-backend build-backend-darwin build-frontend image package lint \
         test-backend test-frontend test clean
 
 ## Build everything (frontend + backend)
@@ -15,6 +15,7 @@ build: build-frontend build-backend
 build-backend:
 	@echo ">> Building Go backend..."
 	GOOS=linux GOARCH=amd64 go build \
+		-buildvcs=false \
 		-o $(OUTPUT_DIR)/$(BINARY_NAME)_linux_amd64 \
 		./pkg
 	@echo ">> Backend binary: $(OUTPUT_DIR)/$(BINARY_NAME)_linux_amd64"
@@ -23,9 +24,11 @@ build-backend:
 build-backend-darwin:
 	@echo ">> Building Go backend for macOS..."
 	GOOS=darwin GOARCH=arm64 go build \
+		-buildvcs=false \
 		-o $(OUTPUT_DIR)/$(BINARY_NAME)_darwin_arm64 \
 		./pkg
 	GOOS=darwin GOARCH=amd64 go build \
+		-buildvcs=false \
 		-o $(OUTPUT_DIR)/$(BINARY_NAME)_darwin_amd64 \
 		./pkg
 
@@ -38,6 +41,11 @@ build-frontend:
 image:
 	@echo ">> Building plugin image $(IMAGE_NAME):$(IMAGE_TAG)..."
 	docker build -t $(IMAGE_NAME):$(IMAGE_TAG) .
+
+## Build a GitHub release zip that can be unpacked directly into /var/lib/grafana/plugins
+package:
+	@echo ">> Building distributable plugin package..."
+	bash scripts/package-plugin.sh
 
 ## Lint + typecheck
 lint:
