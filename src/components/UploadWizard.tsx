@@ -36,7 +36,7 @@ interface Props {
 }
 
 type WizardStep = 0 | 1 | 2 | 3 | 4;
-type DashboardSearchOption = { label: string; value: string; folderTitle?: string };
+type DashboardSearchOption = { title: string; value: string; folderTitle?: string };
 
 type EditableTemplateVariable = TemplateVariable & {
   rowId: string;
@@ -46,6 +46,13 @@ type EditableTemplateVariable = TemplateVariable & {
 };
 
 const TEMPLATE_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
+const DASHBOARD_SEARCH_LIMIT = 20;
+const MAX_TITLE_LENGTH = 120;
+const MAX_SHORT_DESCRIPTION_LENGTH = 200;
+const MAX_LONG_DESCRIPTION_LENGTH = 12000;
+const MAX_FOLDER_LENGTH = 120;
+const MAX_TAG_COUNT = 20;
+const MAX_TAG_LENGTH = 40;
 
 export function UploadWizard({ onSuccess }: Props) {
   const styles = useStyles2(getStyles);
@@ -62,12 +69,14 @@ export function UploadWizard({ onSuccess }: Props) {
   const [dashboardSearch, setDashboardSearch] = useState('');
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchResults, setSearchResults] = useState<DashboardSearchOption[]>([]);
+  const [selectedDashboardUid, setSelectedDashboardUid] = useState<string | null>(null);
 
   const [title, setTitle] = useState('');
   const [shortDescription, setShortDescription] = useState('');
   const [longDescription, setLongDescription] = useState('');
   const [templateFolder, setTemplateFolder] = useState('');
   const [version, setVersion] = useState('1.0.0');
+  const [tagsInput, setTagsInput] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [requiredDatasources, setRequiredDatasources] = useState<RequiredDatasource[]>([]);
   const [availableDatasourceTypes, setAvailableDatasourceTypes] = useState<GrafanaDatasourcePlugin[]>([]);
@@ -78,6 +87,28 @@ export function UploadWizard({ onSuccess }: Props) {
 
   const [variables, setVariables] = useState<EditableTemplateVariable[]>([]);
   const nextVariableIdRef = useRef(0);
+
+  const selectedDashboard = selectedDashboardUid
+    ? searchResults.find((result) => result.value === selectedDashboardUid) ?? null
+    : null;
+  const normalizedTags = normalizeTagValues(tags);
+  const titleError = getLengthError(title, MAX_TITLE_LENGTH, 'Title');
+  const shortDescriptionError = getLengthError(
+    shortDescription,
+    MAX_SHORT_DESCRIPTION_LENGTH,
+    'Short description'
+  );
+  const longDescriptionError = getLengthError(longDescription, MAX_LONG_DESCRIPTION_LENGTH, 'Long description');
+  const folderError = getLengthError(templateFolder, MAX_FOLDER_LENGTH, 'Folder');
+  const tagValidationError = getTagValidationError(normalizedTags);
+  const versionError = getVersionError(version);
+  const metadataValidationError =
+    titleError ??
+    shortDescriptionError ??
+    longDescriptionError ??
+    folderError ??
+    tagValidationError ??
+    versionError;
 
   useEffect(() => {
     getAvailableDatasourceTypes()
@@ -118,6 +149,7 @@ export function UploadWizard({ onSuccess }: Props) {
       return;
     }
 
+    setSelectedDashboardUid(null);
     const reader = new FileReader();
     reader.onload = (event) => handleJsonTextChange(String(event.target?.result ?? ''));
     reader.readAsText(file);
@@ -130,7 +162,7 @@ export function UploadWizard({ onSuccess }: Props) {
       const results = await searchDashboards(query);
       setSearchResults(
         results.map((result) => ({
-          label: `${result.title} (${result.folderTitle ?? 'General'})`,
+          title: result.title,
           value: result.uid,
           folderTitle: result.folderTitle,
         }))
@@ -142,37 +174,46 @@ export function UploadWizard({ onSuccess }: Props) {
     }
   }, []);
 
-  const handleDashboardSearch = useCallback(
-    async (query: string) => {
-      setDashboardSearch(query);
-      await loadDashboardSearchResults(query);
-    },
-    [loadDashboardSearchResults]
-  );
-
   useEffect(() => {
     if (currentStep !== 0) {
       return;
     }
 
-    if (dashboardSearch.trim() || searchResults.length > 0 || searchLoading) {
+    const timeoutMs = dashboardSearch.trim() ? 250 : 0;
+    const timeoutId = window.setTimeout(() => {
+      void loadDashboardSearchResults(dashboardSearch);
+    }, timeoutMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [currentStep, dashboardSearch, loadDashboardSearchResults]);
+
+  const handleSelectDashboard = (uid: string) => {
+    setSelectedDashboardUid(uid);
+    setJsonError(null);
+    setSubmitError(null);
+  };
+
+  const handleLoadSelectedDashboard = async () => {
+    if (!selectedDashboardUid) {
       return;
     }
 
-    void loadDashboardSearchResults('');
-  }, [currentStep, dashboardSearch, loadDashboardSearchResults, searchLoading, searchResults.length]);
-
-  const handleSelectDashboard = async (uid: string) => {
     try {
-      const selectedResult = searchResults.find((result) => result.value === uid);
-      const { dashboard } = await getDashboardByUid(uid);
+      const selectedResult = searchResults.find((result) => result.value === selectedDashboardUid);
+      const { dashboard } = await getDashboardByUid(selectedDashboardUid);
       const serialized = JSON.stringify(dashboard, null, 2);
       handleJsonTextChange(serialized);
       setDashboardRawText(serialized);
       setTemplateFolder(selectedResult?.folderTitle ?? '');
+      setTitle((current) => current || dashboard.title || selectedResult?.title || '');
     } catch (error) {
       setJsonError(error instanceof Error ? error.message : 'Failed to load dashboard');
     }
+  };
+
+  const handleTagsInputChange = (value: string) => {
+    setTagsInput(value);
+    setTags(parseCommaSeparatedValues(value));
   };
 
   const handleImageDrop = (files: FileList | File[]) => {
@@ -214,10 +255,14 @@ export function UploadWizard({ onSuccess }: Props) {
       return;
     }
 
+    const normalizedPublishTags = normalizeTagValues(tags);
     const effectiveVariables = variables.map(materializeEditableVariable);
     const validationError = getPublishValidationError({
       title,
       shortDescription,
+      longDescription,
+      templateFolder,
+      tags: normalizedPublishTags,
       version,
       variables: effectiveVariables,
     });
@@ -235,7 +280,7 @@ export function UploadWizard({ onSuccess }: Props) {
         title,
         shortDescription,
         longDescription,
-        tags,
+        tags: normalizedPublishTags,
         folder: templateFolder.trim() || undefined,
         requiredDatasources,
         author: currentAuthor,
@@ -281,7 +326,7 @@ export function UploadWizard({ onSuccess }: Props) {
 
   const canAdvanceFrom: Record<WizardStep, boolean> = {
     0: Boolean(dashboardJson) && !jsonError,
-    1: Boolean(title.trim()) && Boolean(shortDescription.trim()) && isTemplateVersionValid(version),
+    1: Boolean(title.trim()) && Boolean(shortDescription.trim()) && !metadataValidationError,
     2: !imageError,
     3: !variableValidationError,
     4: true,
@@ -317,9 +362,17 @@ export function UploadWizard({ onSuccess }: Props) {
 
             <Field label="Import from existing Grafana dashboard">
               <div style={{ width: '100%' }}>
+                <Text color="secondary">
+                  Showing up to {DASHBOARD_SEARCH_LIMIT} recent dashboards. Start typing to narrow the list instead of
+                  loading everything at once.
+                </Text>
+
                 <Input
                   value={dashboardSearch}
-                  onChange={(event) => handleDashboardSearch(event.currentTarget.value)}
+                  onChange={(event) => {
+                    setDashboardSearch(event.currentTarget.value);
+                    setSelectedDashboardUid(null);
+                  }}
                   onFocus={() => {
                     if (!dashboardSearch.trim() && searchResults.length === 0 && !searchLoading) {
                       void loadDashboardSearchResults('');
@@ -347,39 +400,50 @@ export function UploadWizard({ onSuccess }: Props) {
                 )}
 
                 {!searchLoading && searchResults.length > 0 && (
-                  <div
-                    style={{
-                      marginTop: '8px',
-                      maxHeight: '220px',
-                      overflowY: 'auto',
-                      border: '1px solid var(--grafana-border-weak, #2f3440)',
-                      borderRadius: '8px',
-                    }}
-                  >
-                    <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--grafana-border-weak, #2f3440)' }}>
+                    <div
+                      className={styles.searchResultsPanel}
+                    >
+                      <div className={styles.searchResultsHeader}>
+                        <Text color="secondary">
+                          {dashboardSearch.trim() ? 'Matching dashboards' : 'Recent dashboards'}
+                        </Text>
+                      </div>
+                      {searchResults.map((result) => {
+                        const isSelected = result.value === selectedDashboardUid;
+
+                        return (
+                          <button
+                            key={result.value}
+                            type="button"
+                            onClick={() => handleSelectDashboard(result.value)}
+                            className={`${styles.searchResultButton} ${
+                              isSelected ? styles.searchResultButtonSelected : ''
+                            }`}
+                          >
+                            <Text>{result.title}</Text>
+                            <Text color="secondary">{result.folderTitle ?? 'General'}</Text>
+                          </button>
+                        );
+                      })}
+                    </div>
+                )}
+
+                {!searchLoading && searchResults.length > 0 && (
+                  <div className={styles.searchSelectionFooter}>
+                    <div>
                       <Text color="secondary">
-                        {dashboardSearch.trim() ? 'Matching dashboards' : 'Recent dashboards'}
+                        {selectedDashboard
+                          ? `Selected dashboard: ${selectedDashboard.title} (${selectedDashboard.folderTitle ?? 'General'})`
+                          : 'Select a dashboard from the list before loading its JSON.'}
                       </Text>
                     </div>
-                    {searchResults.map((result) => (
-                      <button
-                        key={result.value}
-                        type="button"
-                        onClick={() => handleSelectDashboard(result.value)}
-                        style={{
-                          display: 'block',
-                          width: '100%',
-                          textAlign: 'left',
-                          padding: '10px 12px',
-                          border: 'none',
-                          background: 'transparent',
-                          color: 'inherit',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        {result.label}
-                      </button>
-                    ))}
+                    <Button
+                      variant="secondary"
+                      onClick={handleLoadSelectedDashboard}
+                      disabled={!selectedDashboardUid}
+                    >
+                      Load selected dashboard JSON
+                    </Button>
                   </div>
                 )}
               </div>
@@ -408,19 +472,40 @@ export function UploadWizard({ onSuccess }: Props) {
 
         {currentStep === 1 && (
           <Stack direction="column" gap={2}>
-            <Field label="Title" required>
-              <Input value={title} onChange={(event) => setTitle(event.currentTarget.value)} />
-            </Field>
-
-            <Field label="Short description" required>
+            <Field
+              label="Title"
+              required
+              description={`${title.length}/${MAX_TITLE_LENGTH} characters`}
+              invalid={Boolean(titleError)}
+              error={titleError ?? undefined}
+            >
               <Input
-                value={shortDescription}
-                onChange={(event) => setShortDescription(event.currentTarget.value)}
-                maxLength={200}
+                value={title}
+                onChange={(event) => setTitle(event.currentTarget.value)}
+                maxLength={MAX_TITLE_LENGTH}
               />
             </Field>
 
-            <Field label="Long description (Markdown)">
+            <Field
+              label="Short description"
+              required
+              description={`${shortDescription.length}/${MAX_SHORT_DESCRIPTION_LENGTH} characters`}
+              invalid={Boolean(shortDescriptionError)}
+              error={shortDescriptionError ?? undefined}
+            >
+              <Input
+                value={shortDescription}
+                onChange={(event) => setShortDescription(event.currentTarget.value)}
+                maxLength={MAX_SHORT_DESCRIPTION_LENGTH}
+              />
+            </Field>
+
+            <Field
+              label="Long description (Markdown)"
+              description={`${longDescription.length}/${MAX_LONG_DESCRIPTION_LENGTH} characters`}
+              invalid={Boolean(longDescriptionError)}
+              error={longDescriptionError ?? undefined}
+            >
               <div style={{ width: '100%' }}>
                 <Stack direction="row" gap={2}>
                   <div style={{ flex: 1 }}>
@@ -429,6 +514,7 @@ export function UploadWizard({ onSuccess }: Props) {
                       value={longDescription}
                       onChange={(event) => setLongDescription(event.currentTarget.value)}
                       placeholder="# Overview"
+                      maxLength={MAX_LONG_DESCRIPTION_LENGTH}
                     />
                   </div>
                   <div className={styles.markdownPreview}>
@@ -446,28 +532,37 @@ export function UploadWizard({ onSuccess }: Props) {
 
             <Field
               label="Folder"
-              description="Optional category or source folder shown on the Template Hub card."
+              description={`Optional category shown on the Template Hub card. ${templateFolder.length}/${MAX_FOLDER_LENGTH} characters`}
+              invalid={Boolean(folderError)}
+              error={folderError ?? undefined}
             >
               <Input
                 value={templateFolder}
                 onChange={(event) => setTemplateFolder(event.currentTarget.value)}
                 placeholder="Platform / Observability / Team A"
+                maxLength={MAX_FOLDER_LENGTH}
               />
             </Field>
 
             <Field
               label="Version"
               required
-              invalid={Boolean(version) && !isTemplateVersionValid(version)}
-              error={version && !isTemplateVersionValid(version) ? 'Use semantic versioning like 1.2.3' : undefined}
+              invalid={Boolean(versionError)}
+              error={versionError ?? undefined}
             >
               <Input value={version} onChange={(event) => setVersion(event.currentTarget.value)} placeholder="1.0.0" />
             </Field>
 
-            <Field label="Tags">
-              <Input
-                value={tags.join(', ')}
-                onChange={(event) => setTags(parseCommaSeparatedValues(event.currentTarget.value))}
+            <Field
+              label="Tags"
+              description={`Separate tags with commas or new lines. ${normalizedTags.length}/${MAX_TAG_COUNT} tags detected, ${MAX_TAG_LENGTH} characters max per tag.`}
+              invalid={Boolean(tagValidationError)}
+              error={tagValidationError ?? undefined}
+            >
+              <TextArea
+                rows={3}
+                value={tagsInput}
+                onChange={(event) => handleTagsInputChange(event.currentTarget.value)}
                 placeholder="tag-one, tag-two, tag-three"
               />
             </Field>
@@ -542,17 +637,19 @@ export function UploadWizard({ onSuccess }: Props) {
             {imageError && <Alert title={imageError} severity="error" />}
 
             {imagePreview && (
-              <div>
-                <Text color="secondary">Preview</Text>
-                <img
-                  src={imagePreview}
-                  alt="Template preview"
-                  style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '4px', marginTop: '8px' }}
-                />
+              <div className={styles.imagePreviewCard}>
+                <div className={styles.imagePreviewFrame}>
+                  <img src={imagePreview} alt="Template preview" className={styles.imagePreviewImage} />
+                </div>
                 {imageFile && (
-                  <div style={{ marginTop: '8px' }}>
+                  <div className={styles.imagePreviewMeta}>
+                    <Text variant="h6">Preview image selected</Text>
+                    <Text>{imageFile.name}</Text>
                     <Text color="secondary">
-                      Selected image: {imageFile.name} ({formatFileSize(imageFile.size)}, {imageFile.type || 'unknown type'})
+                      {formatFileSize(imageFile.size)} | {imageFile.type || 'unknown type'}
+                    </Text>
+                    <Text color="secondary">
+                      This image is shown on gallery cards and the template details page.
                     </Text>
                   </div>
                 )}
@@ -668,6 +765,9 @@ export function UploadWizard({ onSuccess }: Props) {
                   </Text>
                   <Text variant="bodySmall" color="secondary">
                     Variables asked during import: {variables.filter((variable) => variable.includeInImport).length}
+                  </Text>
+                  <Text variant="bodySmall" color="secondary">
+                    Tags: {normalizedPublishTagsPreview(normalizedTags)}
                   </Text>
                 </Stack>
               </Stack>
@@ -836,6 +936,84 @@ function getStyles(theme: GrafanaTheme2) {
       background: theme.colors.background.secondary,
       borderRadius: theme.shape.radius.default,
       border: `1px solid ${theme.colors.border.medium}`,
+    }),
+    searchResultsPanel: css({
+      marginTop: theme.spacing(1),
+      maxHeight: '260px',
+      overflowY: 'auto',
+      border: `1px solid ${theme.colors.border.weak}`,
+      borderRadius: theme.shape.radius.default,
+      background: theme.colors.background.secondary,
+    }),
+    searchResultsHeader: css({
+      padding: `${theme.spacing(1.25)} ${theme.spacing(1.5)}`,
+      borderBottom: `1px solid ${theme.colors.border.weak}`,
+    }),
+    searchResultButton: css({
+      display: 'grid',
+      gap: theme.spacing(0.5),
+      width: '100%',
+      textAlign: 'left',
+      padding: `${theme.spacing(1.25)} ${theme.spacing(1.5)}`,
+      border: 'none',
+      borderBottom: `1px solid ${theme.colors.border.weak}`,
+      background: 'transparent',
+      color: 'inherit',
+      cursor: 'pointer',
+      transition: 'background-color 120ms ease, box-shadow 120ms ease',
+      ':hover': {
+        background: theme.colors.action.hover,
+      },
+      ':last-child': {
+        borderBottom: 'none',
+      },
+    }),
+    searchResultButtonSelected: css({
+      background: theme.colors.background.canvas,
+      boxShadow: `inset 0 0 0 1px ${theme.colors.primary.border}`,
+    }),
+    searchSelectionFooter: css({
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: theme.spacing(1.5),
+      marginTop: theme.spacing(1),
+      flexWrap: 'wrap',
+    }),
+    imagePreviewCard: css({
+      display: 'grid',
+      gridTemplateColumns: 'minmax(180px, 260px) minmax(220px, 1fr)',
+      gap: theme.spacing(2),
+      alignItems: 'center',
+      padding: theme.spacing(2),
+      background: theme.colors.background.secondary,
+      borderRadius: theme.shape.radius.default,
+      border: `1px solid ${theme.colors.border.medium}`,
+      [`@media (max-width: 720px)`]: {
+        gridTemplateColumns: '1fr',
+      },
+    }),
+    imagePreviewFrame: css({
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: '180px',
+      padding: theme.spacing(1),
+      borderRadius: theme.shape.radius.default,
+      background: theme.colors.background.primary,
+      border: `1px solid ${theme.colors.border.weak}`,
+    }),
+    imagePreviewImage: css({
+      display: 'block',
+      maxWidth: '100%',
+      maxHeight: '240px',
+      objectFit: 'contain',
+      borderRadius: theme.shape.radius.default,
+    }),
+    imagePreviewMeta: css({
+      display: 'grid',
+      gap: theme.spacing(0.75),
+      alignContent: 'start',
     }),
   };
 }
@@ -1010,10 +1188,24 @@ function buildDatasourceTypeOptions(
 }
 
 function parseCommaSeparatedValues(value: string): string[] {
-  return value
-    .split(/[\r\n,]+/)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
+  return Array.from(
+    new Set(
+      value
+        .split(/[\r\n,]+/)
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function normalizeTagValues(tags: string[]): string[] {
+  return Array.from(
+    new Set(
+      tags
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+    )
+  );
 }
 
 function resolveDatasourceDisplayName(value: string, availableDatasourceTypes: GrafanaDatasourcePlugin[]): string {
@@ -1108,6 +1300,9 @@ function getVariableValidationError(variables: TemplateVariable[]): string | nul
 function getPublishValidationError(args: {
   title: string;
   shortDescription: string;
+  longDescription: string;
+  templateFolder: string;
+  tags: string[];
   version: string;
   variables: TemplateVariable[];
 }): string | null {
@@ -1119,9 +1314,48 @@ function getPublishValidationError(args: {
     return 'Short description is required.';
   }
 
+  const metadataLengthError =
+    getLengthError(args.title, MAX_TITLE_LENGTH, 'Title') ??
+    getLengthError(args.shortDescription, MAX_SHORT_DESCRIPTION_LENGTH, 'Short description') ??
+    getLengthError(args.longDescription, MAX_LONG_DESCRIPTION_LENGTH, 'Long description') ??
+    getLengthError(args.templateFolder, MAX_FOLDER_LENGTH, 'Folder') ??
+    getTagValidationError(args.tags);
+  if (metadataLengthError) {
+    return metadataLengthError;
+  }
+
   if (!isTemplateVersionValid(args.version)) {
     return 'Version must use semantic versioning like 1.2.3.';
   }
 
   return getVariableValidationError(args.variables);
+}
+
+function getLengthError(value: string, maxLength: number, label: string): string | null {
+  return value.length > maxLength ? `${label} must be ${maxLength} characters or fewer.` : null;
+}
+
+function getVersionError(version: string): string | null {
+  if (!version.trim()) {
+    return 'Version is required.';
+  }
+
+  return isTemplateVersionValid(version) ? null : 'Use semantic versioning like 1.2.3.';
+}
+
+function getTagValidationError(tags: string[]): string | null {
+  if (tags.length > MAX_TAG_COUNT) {
+    return `Tags support at most ${MAX_TAG_COUNT} entries.`;
+  }
+
+  const tooLongTag = tags.find((tag) => tag.length > MAX_TAG_LENGTH);
+  if (tooLongTag) {
+    return `Tag "${tooLongTag}" must be ${MAX_TAG_LENGTH} characters or fewer.`;
+  }
+
+  return null;
+}
+
+function normalizedPublishTagsPreview(tags: string[]): string {
+  return tags.length > 0 ? tags.join(', ') : '-';
 }
