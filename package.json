@@ -1,6 +1,6 @@
 {
   "name": "gregoor-private-marketplace-app",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "description": "Private Grafana dashboard marketplace for your organization",
   "scripts": {
     "build": "webpack -c ./.config/webpack.config.ts --env production",
