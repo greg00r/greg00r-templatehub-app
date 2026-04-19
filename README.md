@@ -1,63 +1,64 @@
 # Template Hub
 
-Repozytorium zawiera kod pluginu Grafany `greg00r-templatehub-app` o nazwie `Template Hub`.
+This repository contains the Grafana app plugin `greg00r-templatehub-app`, branded as `Template Hub`.
 
-To jest app plugin z:
-- frontendem React/TypeScript,
-- backendem Go opartym o `grafana-plugin-sdk-go`,
-- lokalnym storage dla template'ow dashboardow,
-- flow importu i uploadu z poziomu UI.
+It is an app plugin with:
+- a React/TypeScript frontend,
+- a Go backend built on `grafana-plugin-sdk-go`,
+- local storage for dashboard templates,
+- UI flows for importing and uploading templates.
 
-Repo nie trzyma chartu Helm ani lokalnego deployu Minikube. To siedzi w sasiednim repo `../grafana-local`.
+This repository does not contain the Helm chart or the local Minikube deployment. Those live in the sibling repo `../grafana-local`.
 
-## Co robi plugin
+## What the plugin does
 
-Plugin rozwiazuje problem wewnetrznego huba template'ow dashboardow wewnatrz instancji Grafany:
+Template Hub provides an internal dashboard template hub inside a Grafana instance:
 
-- pokazuje galerie template'ow,
-- pozwala wejsc w widok szczegolowy template'u,
-- importuje template jako nowy dashboard do wybranego folderu,
-- pyta o zmienne przed importem,
-- pozwala opublikowac nowy template z poziomu UI,
-- zapisuje template lokalnie albo przez interfejs storage moze byc podpiety do zewnetrznego backendu.
+- it shows a gallery of reusable templates,
+- it provides a template detail view,
+- it imports a template as a new dashboard into a selected folder,
+- it asks for variables before import,
+- it lets users publish a new template from the UI,
+- it stores templates locally, with an abstraction layer ready for an external backend later.
 
-## Jak to dziala
+## How it works
 
-Sa tu 3 warstwy:
+There are three layers:
 
-1. Frontend pluginu
-- renderuje galerie, detail, import i upload wizard,
-- pobiera template'y z `/api/plugins/greg00r-templatehub-app/resources/*`,
-- przy imporcie wywoluje natywne API Grafany `POST /api/dashboards/db`.
+1. Frontend
+- renders the gallery, detail view, import flow, and upload wizard,
+- fetches templates from `/api/plugins/greg00r-templatehub-app/resources/*`,
+- uses the native Grafana API `POST /api/dashboards/db` during import.
 
-2. Backend pluginu
-- jest uruchamiany przez Grafane jako backend app pluginu,
-- obsluguje resource endpointy pluginu,
-- czyta i zapisuje template bundles w storage,
-- nie potrzebuje osobnego serwisu HTTP w local mode.
+2. Backend
+- runs inside Grafana as the backend part of the app plugin,
+- handles plugin resource endpoints,
+- reads and writes template bundles through the storage layer,
+- does not need a separate HTTP service in local mode.
 
 3. Storage
-- local mode: pliki na filesystemie Grafany,
-- external mode: interfejs jest przygotowany, ale w tym repo to nadal stub / szkic integracji.
+- local mode stores files on the Grafana filesystem,
+- external mode is abstracted behind an interface, but is still a stub in this repository.
 
-## Gdzie zapisuja sie template'y
+## Where templates are stored
 
-Domyslna lokalna sciezka pluginu:
+The default local storage path is:
 
 ```text
 /var/lib/grafana/plugins-data/greg00r-templatehub-app/templates
 ```
 
-To jest ustawione w backendzie pluginu jako:
+This is defined in:
 
-- [models.go](C:/Users/gr3g0/Documents/repo/github/private-marketplace-templates/pkg/plugin/models.go)
+- `pkg/plugin/models.go`
 - `DefaultLocalPath = "/var/lib/grafana/plugins-data/greg00r-templatehub-app/templates"`
 
-Plugin ma tez kompatybilnosc wstecz:
-- jesli znajdzie stare dane pod `/var/lib/grafana/plugins-data/gregoor-private-marketplace-app/templates`,
-- sprobuje je automatycznie przeniesc do nowej sciezki `Template Hub`.
+The plugin also includes backward compatibility for older installs:
 
-Kazdy template to osobny katalog:
+- if it finds existing data under `/var/lib/grafana/plugins-data/gregoor-private-marketplace-app/templates`,
+- it will try to migrate that data automatically to the new `Template Hub` path.
+
+Each template is stored in its own directory:
 
 ```text
 <templates_root>/
@@ -68,86 +69,94 @@ Kazdy template to osobny katalog:
     image.png / image.jpg / image.webp / ...
 ```
 
-Przy uploadzie plugin zapisuje:
-- `template.json` - dashboard JSON,
-- `metadata.json` - tytul, opis, tagi, wymagane datasources itd.,
-- `variables.json` - definicje pol formularza importu,
-- `image.*` - obraz podgladu, jesli zostal dodany.
+During upload, the plugin stores:
 
-## Co dzieje sie przy imporcie
+- `template.json` as the dashboard JSON,
+- `metadata.json` as title, descriptions, tags, required datasources, and related metadata,
+- `variables.json` as the import form definition,
+- `image.*` as the preview image if one was provided.
 
-Import to glownie praca frontendu pluginu plus natywnego API Grafany:
+## What happens during import
 
-1. frontend pobiera `template.json`, `metadata.json` i `variables.json`,
-2. uzytkownik uzupelnia zmienne i wybiera folder,
-3. frontend przygotowuje dashboard do importu,
-4. frontend wysyla gotowy dashboard do Grafany przez `POST /api/dashboards/db`.
+Import is mostly handled by the frontend plus the native Grafana API:
 
-Wazne:
-- backend pluginu nie tworzy dashboardu bezposrednio w bazie Grafany,
-- backend pluginu tylko dostarcza i zapisuje template bundles,
-- sam import dashboardu korzysta z oficjalnego API Grafany.
-- plugin wystawia import dla wszystkich uzytkownikow, ktorzy maja dostep do aplikacji, ale finalny zapis dashboardu nadal respektuje uprawnienia Grafany do tworzenia dashboardow i zapisu do folderu.
+1. the frontend fetches `template.json`, `metadata.json`, and `variables.json`,
+2. the user fills in variables and selects a folder,
+3. the frontend prepares the dashboard model for import,
+4. the frontend sends the final payload to Grafana through `POST /api/dashboards/db`.
 
-## Co dzieje sie przy uploadzie
+Important details:
 
-Upload to polaczenie frontendu i backendu pluginu:
+- the backend plugin does not write dashboards directly into the Grafana database,
+- the backend plugin only serves and stores template bundles,
+- dashboard creation itself uses the official Grafana API,
+- the plugin exposes import to users who can access the app, but the final dashboard save still respects Grafana folder and dashboard permissions.
 
-1. frontend zbiera dashboard JSON, metadata, variables i opcjonalny obraz,
-2. frontend wysyla payload do:
+## What happens during upload
+
+Upload is a combination of frontend and backend behavior:
+
+1. the frontend collects dashboard JSON, metadata, variables, and an optional image,
+2. the frontend sends the payload to:
 
 ```text
 /api/plugins/greg00r-templatehub-app/resources/templates
 ```
 
-3. backend pluginu waliduje dane,
-4. backend zapisuje bundle do storage,
-5. nowy template pojawia sie w galerii.
+3. the backend validates the payload,
+4. the backend stores the bundle,
+5. the new template appears in the appropriate queue or gallery.
 
-Upload jest ograniczony do rol `Editor` i `Admin`:
-- frontend ukrywa akcje publikacji dla `Viewer`,
-- strona `/upload` pokazuje guard w UI,
-- backend pluginu dodatkowo egzekwuje to po stronie serwera, wiec sam frontend nie jest jedyna ochrona.
+Upload is restricted to `Editor` and `Admin` roles by default:
 
-## Czy to jest tylko praca pluginu
+- the frontend hides upload actions from `Viewer`,
+- the `/upload` page shows an access guard in the UI,
+- the backend also enforces authorization, so the frontend is not the only protection layer.
 
-Z punktu widzenia runtime: tak.
+## Is this only plugin runtime work?
 
-W normalnym dzialaniu nie ma tu sidecara ani osobnego backend service.
+From a runtime perspective, yes.
 
-Runtime sklada sie z:
-- frontend bundle pluginu ladowanego w przegladarce,
-- backend binary pluginu uruchamianego przez Grafane,
-- lokalnego katalogu na pliki template'ow.
+In normal operation there is no sidecar and no separate backend service.
 
-Czyli:
-- brak sidecara do obslugi requestow pluginu,
-- brak osobnego kontenera API dla local mode,
-- brak osobnej bazy danych dla pluginu.
+The runtime consists of:
 
-## Czy jest tu jakis dodatkowy kontener
+- the frontend bundle loaded in the browser,
+- the backend plugin binary started by Grafana,
+- the local filesystem directory used for template storage.
 
-W samym pluginie: nie.
+So in practice:
 
-W lokalnym deployu Kubernetes: tak, ale to nie jest sidecar, tylko init container.
+- no sidecar for plugin requests,
+- no separate API container in local mode,
+- no separate database for the plugin itself.
 
-W repo `../grafana-local` lokalna Grafana uzywa `extraInitContainers`, ktore:
-- kopiuja pliki pluginu do katalogu pluginow Grafany,
-- seeduja przykladowe template'y do PVC, jesli storage jest pusty.
+## Is there any extra container involved?
 
-To jest jednorazowy krok przed startem poda Grafany.
+Inside the plugin itself: no.
 
-Czyli:
-- `nie`: sidecar dzialajacy razem z Grafana przez caly czas,
-- `tak`: init container przy starcie poda w lokalnym deployu Minikube.
+In the local Kubernetes deployment: yes, but it is an init container, not a sidecar.
 
-Szczegoly sa w:
-- [../grafana-local/values/private-marketplace.yaml](C:/Users/gr3g0/Documents/repo/github/grafana-local/values/private-marketplace.yaml)
-- [Dockerfile](C:/Users/gr3g0/Documents/repo/github/private-marketplace-templates/Dockerfile)
+In `../grafana-local`, the local Grafana deployment uses `extraInitContainers` that:
 
-## Jak lokalny deploy mapuje storage
+- copy plugin files into the Grafana plugins directory,
+- seed example templates into the PVC if the storage is empty.
 
-W `grafana-local` storage pluginu jest podmontowany z PVC:
+This is a one-time step during pod startup.
+
+So the short version is:
+
+- no long-running sidecar next to Grafana,
+- yes init container in the local Minikube deployment.
+
+Details are in:
+
+- `../grafana-local/values/private-marketplace.yaml`
+- `Dockerfile`
+
+## How the local deployment maps storage
+
+In `grafana-local`, plugin storage is backed by a PVC:
 
 - PVC -> volume `marketplace-templates`
 - volume -> mount:
@@ -156,20 +165,20 @@ W `grafana-local` storage pluginu jest podmontowany z PVC:
 /var/lib/grafana/plugins-data/greg00r-templatehub-app/templates
 ```
 
-Dzieki temu template'y przetrwaja restart poda.
+That allows templates to survive pod restarts.
 
-## Struktura repo
+## Repository structure
 
 ```text
-src/        frontend pluginu Grafany
-pkg/        backend Go oparty o grafana-plugin-sdk-go
-templates/  przykladowe template bundles do testow
-.config/    konfiguracja webpacka
-Dockerfile  obraz artefaktu pluginu dla Grafany
-Makefile    build/test/image dla samego pluginu
+src/        Grafana plugin frontend
+pkg/        Go backend built on grafana-plugin-sdk-go
+templates/  example template bundles for testing
+.config/    webpack configuration
+Dockerfile  artifact image for Grafana deployments
+Makefile    build, test, and image commands for the plugin
 ```
 
-## Najwazniejsze pliki
+## Key files
 
 - Frontend entry: `src/module.ts`
 - App root: `src/App.tsx`
@@ -179,9 +188,9 @@ Makefile    build/test/image dla samego pluginu
 - Backend entry: `pkg/main.go`
 - Resource handlers: `pkg/plugin/resources.go`
 - Storage interface: `pkg/plugin/storage/storage.go`
-- Local storage: `pkg/plugin/storage/local.go`
+- Local storage implementation: `pkg/plugin/storage/local.go`
 
-## Build i testy
+## Build, test, and package
 
 ```bash
 npm install
@@ -194,37 +203,39 @@ make build
 make image
 ```
 
-`npm run package` albo `make package` buduje gotowa paczke release do katalogu:
+`npm run package` or `make package` builds a release archive under:
 
 ```text
 .artifacts/releases/greg00r-templatehub-app-<version>.zip
 ```
 
-To jest zip z katalogiem `greg00r-templatehub-app/`, ktory mozna wypakowac bezposrednio do:
+That zip contains a ready-to-unpack `greg00r-templatehub-app/` directory that can be extracted directly into:
 
 ```text
 /var/lib/grafana/plugins
 ```
 
-W srodku sa:
-- frontend bundle,
+The archive contains:
+
+- the frontend bundle,
 - `plugin.json`,
-- assety pluginu,
-- backend binaries dla `linux/amd64` i `linux/arm64`.
+- plugin assets,
+- backend binaries for `linux/amd64` and `linux/arm64`.
 
-Repo ma tez workflow GitHub Actions:
+The repository also includes a GitHub Actions workflow:
 
-- plik: `.github/workflows/release-package.yml`
-- trigger release: push taga `v*`, np. `v1.0.4`
+- file: `.github/workflows/release-package.yml`
+- release trigger: push a tag matching `v*`, for example `v1.0.4`
 
-Po pushu taga workflow:
-- uruchamia testy,
-- buduje zip,
-- publikuje assety `.zip` i `.sha256` do GitHub Release.
+When a tag is pushed, the workflow:
 
-## Instalacja z gotowej paczki GitHub Release
+- runs tests,
+- builds the zip archive,
+- publishes `.zip` and `.sha256` assets to GitHub Releases.
 
-Jesli release asset jest juz zbudowany na GitHubie, wdrozenie do innej Grafany moze wygladac tak:
+## Installing from a GitHub Release package
+
+If the release asset already exists on GitHub, deployment to another Grafana instance can look like this:
 
 ```bash
 curl -L -o template-hub.zip \
@@ -233,56 +244,58 @@ curl -L -o template-hub.zip \
 unzip template-hub.zip -d /var/lib/grafana/plugins
 ```
 
-Po rozpakowaniu powinienes miec katalog:
+After extraction, the directory should exist at:
 
 ```text
 /var/lib/grafana/plugins/greg00r-templatehub-app
 ```
 
-Do uruchomienia pluginu potrzebujesz jeszcze:
+To run the plugin, you also need:
 
-- allowlisty dla unsigned plugin:
+- an allowlist entry for the unsigned plugin:
 
 ```text
 GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=greg00r-templatehub-app
 ```
 
-- writable storage dla template'ow:
+- writable storage for templates:
 
 ```text
 /var/lib/grafana/plugins-data/greg00r-templatehub-app/templates
 ```
 
-Po skopiowaniu pluginu zrestartuj Pode/Deploy Grafany.
+After copying the plugin, restart the Grafana pod or deployment.
 
-W Kubernetes zwykle wystarczy:
+In Kubernetes, a typical restart command is:
 
 ```bash
 kubectl rollout restart deployment/grafana -n monitoring
 ```
 
-Jesli uzywasz Enterprise RBAC dla app pluginow, sam deploy jest taki sam. Roznica jest tylko po stronie konfiguracji Grafany Enterprise. Na OSS plugin nadal dziala z fallbackiem do `Viewer / Editor / Admin`.
+If you use Enterprise RBAC for app plugins, the deployment model stays the same. The difference is only in the Grafana Enterprise configuration. On OSS, the plugin still works with the `Viewer / Editor / Admin` fallback model.
 
-`make image` buduje obraz artefaktu pluginu. W lokalnym deployu `grafana-local` uzywa unikalnego taga przy kazdym deployu, zeby nie podnosic starego init containera z cache.
+`make image` builds the plugin artifact image. In the local `grafana-local` setup, that deployment uses a unique tag on every rollout to avoid stale init container cache.
 
-## Lokalny deploy
+## Local deployment
 
-Lokalna Grafana nie jest utrzymywana w tym repo. Uzyj:
+The local Grafana deployment is not maintained in this repository. Use:
 
 ```bash
 cd ../grafana-local
 bash scripts/deploy-private-marketplace.sh
 ```
 
-## Krotka odpowiedz na pytanie "czy potrzebujemy side containera?"
+## Short answer: do we need a sidecar?
 
-Nie do samego dzialania pluginu.
+No, not for the plugin itself.
 
-Potrzebujesz tylko:
-- plugin frontend,
-- plugin backend,
-- storage na pliki.
+You only need:
 
-W naszym local dev deployu jest dodatkowy init container, ale tylko po to, zeby:
-- wrzucic plugin do Grafany,
-- skopiowac seed templates.
+- the plugin frontend,
+- the plugin backend,
+- storage for template files.
+
+In local development, there is an additional init container, but only to:
+
+- copy the plugin into Grafana,
+- copy seed templates.
